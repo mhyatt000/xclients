@@ -1,0 +1,47 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "xclients"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=2.3.4",
+    "open3d[gui]",
+    "opencv-python>=4.11.0.86",
+    "rich>=14.2.0",
+    "tyro>=0.9.35",
+    "webpolicy",
+]
+
+[tool.uv.sources]
+webpolicy = { git = "https://github.com/mhyatt000/webpolicy" }
+
+[project.scripts]
+yourpkg = "yourpkg.cli:main"   # if you expose a CLI
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/xclients"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+lint.extend-select = ["I", "UP", "B", "C4", "SIM", "PERF"]
+fix = true
+src = ["src", "tests"]
+
+[tool.pyright]
+include = ["src", "tests"]
+reportMissingTypeStubs = false
+pythonVersion = "3.10"
+
+[tool.coverage.run]
+source = ["yourpkg"]
+branch = true
+
