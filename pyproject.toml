@@ -19,15 +19,26 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "depth-anything-3[all]",
     "numpy",
-    "open3d[gui]",
     "opencv-python>=4.11.0.86",
     "rich>=14.2.0",
     "tyro>=0.9.35",
     "webpolicy",
+]
+
+[project.optional-dependencies]
+da3 = [
+    "open3d[gui]",
+    "depth-anything-3[all]",
     "xformers>=0.0.33.post1",
 ]
+all = [
+    "open3d[gui]",
+    "depth-anything-3[all]",
+    "xformers>=0.0.33.post1",
+]
+
+
 
 [tool.uv.sources]
 webpolicy = { git = "https://github.com/mhyatt000/webpolicy" }
@@ -37,7 +48,6 @@ depth-anything-3 = { git = "https://github.com/ByteDance-Seed/Depth-Anything-3" 
 [project.scripts]
 yourpkg = "yourpkg.cli:main"   # if you expose a CLI
 da3 = "depth_anything_3.cli:app"
-
 
 
 
