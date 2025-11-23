@@ -41,12 +41,7 @@ class CameraPolicy(BasePolicy):
         if not success:
             raise RuntimeError(f"Could not read frame from camera {payload.id}")
 
-        ok, encoded = cv2.imencode(".jpg", frame)
-        if not ok:
-            raise RuntimeError("Could not encode frame as JPEG")
-
-        image_b64 = base64.b64encode(encoded).decode("ascii")
-        return {"id": payload.id, "image": image_b64}
+        return {"id": payload.id, "image": frame}
 
 
 def main(cfg: Config):
