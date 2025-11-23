@@ -8,9 +8,11 @@ packages = ["src/xclients"]
 xformers = ["torch"]
 gsplat = ["torch"]
 
-# override-dependencies = [
-# "numpy>=2.15.0",
-# ]
+[tool.uv]
+# da3
+override-dependencies = [
+"numpy>=2", 
+]
 
 [project]
 name = "xclients"
@@ -28,6 +30,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+hamer = [
+    "hamer[server]",
+]
 da3 = [
     "open3d[gui]",
     "depth-anything-3[all]",
@@ -37,6 +42,7 @@ all = [
     "open3d[gui]",
     "depth-anything-3[all]",
     "xformers>=0.0.33.post1",
+    "hamer[server]",
 ]
 cv = [
     "opencv-python>=4.11.0.86",
@@ -46,8 +52,9 @@ cv = [
 
 
 [tool.uv.sources]
-webpolicy = { git = "https://github.com/mhyatt000/webpolicy" }
 xclients = { workspace = true }
+webpolicy = { git = "https://github.com/mhyatt000/webpolicy" }
+hamer = { git = "https://github.com/mhyatt000/hamer" }
 depth-anything-3 = { git = "https://github.com/ByteDance-Seed/Depth-Anything-3" }
 
 [project.scripts]
