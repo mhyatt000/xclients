@@ -1,12 +1,8 @@
 [build-system]
-requires = ["hatchling>=1.26", 'torch']
+requires = ["hatchling>=1.26"]
 build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/xclients"]
-
-[tool.uv.extra-build-dependencies]
-xformers = ["torch"]
-gsplat = ["torch"]
 
 [tool.uv]
 # da3
@@ -21,6 +17,8 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "jax==0.4.34",
+    "jaxlib==0.4.34",
     "numpy",
     "opencv-python>=4.11.0.86",
     "pydantic>=2.11.10",
@@ -30,38 +28,23 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-hamer = [
-    "hamer[server]",
-]
-da3 = [
-    "open3d[gui]",
-    "depth-anything-3[all]",
-    "xformers>=0.0.33.post1",
-]
 all = [
-    "open3d[gui]",
-    "depth-anything-3[all]",
-    "xformers>=0.0.33.post1",
-    "hamer[server]",
+    "open3d",
 ]
 cv = [
     "opencv-python>=4.11.0.86",
     "opencv-python-headless>=4.11.0.86",
 ]
 
-
-
 [tool.uv.sources]
 xclients = { workspace = true }
-webpolicy = { git = "https://github.com/mhyatt000/webpolicy" }
-hamer = { git = "https://github.com/mhyatt000/hamer" }
-depth-anything-3 = { git = "https://github.com/ByteDance-Seed/Depth-Anything-3" }
+webpolicy = { git = "https://github.com/mhyatt000/webpolicy" , rev = "457d39ac1b09363a2e73eeb31698dab124e9891c" }
+# hamer = { git = "https://github.com/mhyatt000/hamer" }
+# depth-anything-3 = { git = "https://github.com/ByteDance-Seed/Depth-Anything-3" }
 
 [project.scripts]
 yourpkg = "yourpkg.cli:main"   # if you expose a CLI
 da3 = "depth_anything_3.cli:app"
-
-
 
 [tool.pytest.ini_options]
 addopts = "-q"
