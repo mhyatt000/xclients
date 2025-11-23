@@ -2,6 +2,14 @@ import webpolicy
 from rich.pretty import pprint
 from rich import print
 
+import open3d as o3d
+import numpy as np
+
+
+import open3d as o3d
+import numpy as np
+
+
 from xclients.gui.viewer import O3DPointCloudViewer
 import time
 from functools import wraps
@@ -46,15 +54,7 @@ def color_points(points):
 
 @dataclass
 class Config:
-
-    host: str
-    port: int = 8001
-
-    cam: int = 0
-    maxd: float = 20.0 # max depth
-    relative: bool = False # relative colors
-    resize: int = 5 # downsample n times
-    extreme: bool = False # use extreme color
+    do_opt: bool = False
 
 
 def timeit(f):
@@ -67,27 +67,84 @@ def timeit(f):
         return result
     return wrapper
 
+def icp_refine(src_model, tgt_cloud, init_T, voxel=0.01, max_corr=0.03):
+    src = src_model.voxel_down_sample(voxel)
+    tgt = tgt_cloud.voxel_down_sample(voxel)
+    tgt.estimate_normals(o3d.geometry.KDTreeSearchParamHybrid(radius=3*voxel, max_nn=50)) 
+
+    # for corr in np.linspace(max_corr*5, max_corr/10, 3):
+    loss = o3d.pipelines.registration.TukeyLoss(k=max_corr)  # robust
+    crit = o3d.pipelines.registration.ICPConvergenceCriteria(max_iteration=500)
+    reg = o3d.pipelines.registration.registration_icp(
+        src, tgt, max_corr, init_T,
+        o3d.pipelines.registration.TransformationEstimationPointToPlane(loss),
+        criteria=crit,
+    )
+    # tighten and repeat
+    for d in [0.02, 0.015, 0.01]:
+        reg = o3d.pipelines.registration.registration_icp(
+            src, tgt, d, reg.transformation,
+            o3d.pipelines.registration.TransformationEstimationPointToPlane(loss),
+            criteria=crit,
+        )
+    return reg.transformation, reg.fitness, reg.inlier_rmse
+
+
 def main(cfg: Config):
-    print("Hello from dav-policy!")
 
-    cam = cv2.VideoCapture(cfg.cam)
-    client = Client(host=cfg.host, port=cfg.port)
-    viewer = O3DPointCloudViewer(target_hz=30, point_size=5.0)
-    # viewer.app.run()
+    payload = np.load('roboreg-payload.npz', allow_pickle=True)
+    payload = {k:payload[k] for k in payload.files}
+    payload['mesh_vertices'] = list(payload['mesh_vertices'].item().values())
+    payload['observed_vertices'] = list(payload['observed_vertices'].item().values())
+    HT = payload['HT']
 
-    """
-    depths = np.load('/Users/matthewhyatt/outputs/xgym.camera.side_depths.npz')
-    depths = depths[depths.files[0]]
+    # take 0
+    from rich.progress import track
+    for i in track(range(0,len(payload['mesh_vertices']),10)):
+        stop, step = len(payload['mesh_vertices']), len(payload['mesh_vertices'])//5
+        stop, step = i+1, 1
+        mesh_v = np.vstack(payload['mesh_vertices'][i:stop: step])
+        obs_v = np.vstack(payload['observed_vertices'][i:stop: step])
 
-    _, height,width = depths.shape
-    x, y = np.meshgrid(np.arange(width), np.arange(height))
-    x = (x - width / 2) / 470.4
-    y = (y - height / 2) / 470.4
-    z = np.array(depths)
-    points = np.stack((np.multiply(x, z), np.multiply(y, z), z), axis=-1) # .reshape(-1, 3)
-    i = 0
-    pprint(depths.shape)
-    """
+        # sparsify
+        # mesh_v , obs_v = mesh_v[::3], obs_v[::3]
+
+        # one is green and one is pink
+        colors_mesh = np.tile(np.array([[1.0, 0.0, 1.0]]), (mesh_v.shape[0], 1))
+        colors_obs = np.tile(np.array([[0.0, 1.0, 0.0]]), (obs_v.shape[0], 1))
+
+        if cfg.do_opt:
+            t, fitness, rmse = icp_refine(
+                o3d.geometry.PointCloud(o3d.utility.Vector3dVector(mesh_v)),
+                o3d.geometry.PointCloud(o3d.utility.Vector3dVector(obs_v)),
+                HT,
+                voxel=0.01,
+                max_corr=0.05,
+            )
+            print(fitness, rmse)
+            # quit()
+        else:
+            t = HT
+
+        print(t)
+        print()
+        t = np.linalg.inv(HT)
+        print(t)
+
+        mesh_v = np.matmul(t[:3, :3], mesh_v.T).T + t[:3, 3]
+        # obs_v = np.matmul(HT[:3, :3], obs_v.T).T + HT[:3, 3]
+
+        # random or your own Nx3 points
+        mpcd = o3d.geometry.PointCloud()
+        mpcd.points = o3d.utility.Vector3dVector(mesh_v)
+        mpcd.colors = o3d.utility.Vector3dVector(colors_mesh)
+        opcd = o3d.geometry.PointCloud()
+        opcd.points = o3d.utility.Vector3dVector(obs_v)
+        opcd.colors = o3d.utility.Vector3dVector(colors_obs)
+
+        o3d.visualization.draw_geometries([mpcd, opcd])
+
+    quit()
 
     out = None
     while True:

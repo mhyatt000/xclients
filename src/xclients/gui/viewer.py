@@ -87,10 +87,10 @@ class O3DPointCloudViewer:
         xyz, rgb = self._latest_xyz, self._latest_rgb
         if xyz is not None:
             self.pcd.points = o3d.utility.Vector3dVector(xyz)
-            # if rgb is not None:
-                # self.pcd.colors = o3d.utility.Vector3dVector(rgb)
-            # else:
-            self.pcd.colors = o3d.utility.Vector3dVector(np.zeros_like(xyz))
+            if rgb is not None:
+                self.pcd.colors = o3d.utility.Vector3dVector(rgb)
+            else:
+                self.pcd.colors = o3d.utility.Vector3dVector(np.zeros_like(xyz))
             self.scene.scene.remove_geometry("pcd")
             self.scene.scene.add_geometry("pcd", self.pcd, self.mat)
 
