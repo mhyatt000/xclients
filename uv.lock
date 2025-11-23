@@ -4582,7 +4582,7 @@ wheels = [
 [[package]]
 name = "webpolicy"
 version = "0.1.0"
-source = { git = "https://github.com/mhyatt000/webpolicy#dcf241ad13e2cabd1a111042bfb6c11d90dbc7cf" }
+source = { git = "https://github.com/mhyatt000/webpolicy#0f635e3f386190169f86df5b2e146e2a131c15c4" }
 dependencies = [
     { name = "jax" },
     { name = "jaxlib" },
@@ -4654,6 +4654,7 @@ source = { editable = "." }
 dependencies = [
     { name = "numpy" },
     { name = "opencv-python" },
+    { name = "pydantic" },
     { name = "rich" },
     { name = "tyro" },
     { name = "webpolicy" },
@@ -4665,6 +4666,10 @@ all = [
     { name = "hamer", extra = ["server"] },
     { name = "open3d" },
     { name = "xformers" },
+]
+cv = [
+    { name = "opencv-python" },
+    { name = "opencv-python-headless" },
 ]
 da3 = [
     { name = "depth-anything-3", extra = ["all"] },
@@ -4690,13 +4695,16 @@ requires-dist = [
     { name = "open3d", extras = ["gui"], marker = "extra == 'all'" },
     { name = "open3d", extras = ["gui"], marker = "extra == 'da3'" },
     { name = "opencv-python", specifier = ">=4.11.0.86" },
+    { name = "opencv-python", marker = "extra == 'cv'", specifier = ">=4.11.0.86" },
+    { name = "opencv-python-headless", marker = "extra == 'cv'", specifier = ">=4.11.0.86" },
+    { name = "pydantic", specifier = ">=2.11.10" },
     { name = "rich", specifier = ">=14.2.0" },
     { name = "tyro", specifier = ">=0.9.35" },
     { name = "webpolicy", git = "https://github.com/mhyatt000/webpolicy" },
     { name = "xformers", marker = "extra == 'all'", specifier = ">=0.0.33.post1" },
     { name = "xformers", marker = "extra == 'da3'", specifier = ">=0.0.33.post1" },
 ]
-provides-extras = ["hamer", "da3", "all"]
+provides-extras = ["hamer", "da3", "all", "cv"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "xclients", editable = "." }]
