@@ -7,14 +7,12 @@ callers can request a camera by ID and receive a decoded ``numpy`` image.
 
 from __future__ import annotations
 
-import tyro
-import base64
 import logging
 from dataclasses import dataclass
-from typing import Tuple
 
 import cv2
 import numpy as np
+import tyro
 from webpolicy.client import Client
 
 
@@ -43,7 +41,7 @@ def main(cfg: Config) -> None:
             logging.error("Failed to read frame from camera 0")
             continue
 
-        frame= (out["image"]).astype(np.uint8)
+        frame = (out["image"]).astype(np.uint8)
         if cfg.show:
             cv2.imshow("Camera 0", frame)
         if cv2.waitKey(1) & 0xFF == ord("q"):
@@ -55,6 +53,5 @@ def main(cfg: Config) -> None:
 
 
 if __name__ == "__main__":
-
     logging.basicConfig(level=logging.INFO)
     main(tyro.cli(Config))
