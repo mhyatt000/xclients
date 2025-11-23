@@ -8,12 +8,12 @@ import cv2
 from pydantic import TypeAdapter
 
 from webpolicy.base_policy import BasePolicy
-from webpolicy.server.server import Server
+from webpolicy.server import Server
 
 
 @dataclass
 class Config:
-    host: str
+    host: str = "0.0.0.0"
     port: int = 8080
 
 
@@ -27,7 +27,7 @@ class CameraPolicy(BasePolicy):
         self.caps: Dict[int, cv2.VideoCapture] = {}
         self.adapter = TypeAdapter(CameraPayload)
 
-    def infer(self, raw: Dict) -> Dict:
+    def step(self, raw: Dict) -> Dict:
         payload: CameraPayload = self.adapter.validate_python(raw)
 
         cap = self.caps.get(payload.id)

@@ -21,6 +21,7 @@ requires-python = ">=3.11"
 dependencies = [
     "numpy",
     "opencv-python>=4.11.0.86",
+    "pydantic>=2.11.10",
     "rich>=14.2.0",
     "tyro>=0.9.35",
     "webpolicy",
@@ -36,6 +37,10 @@ all = [
     "open3d[gui]",
     "depth-anything-3[all]",
     "xformers>=0.0.33.post1",
+]
+cv = [
+    "opencv-python>=4.11.0.86",
+    "opencv-python-headless>=4.11.0.86",
 ]
 
 
