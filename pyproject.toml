@@ -5,13 +5,16 @@ build-backend = "hatchling.build"
 packages = ["src/xclients"]
 
 [tool.uv.extra-build-dependencies]
-xformers = ["torch"]
-gsplat = ["torch"]
+# da3
+# xformers = ["torch"]
+# gsplat = ["torch"]
+nvidia-pyindex = ["pip"]
 
 [tool.uv]
 # da3
 override-dependencies = [
 "numpy>=2",
+"torchaudio", # sam
 ]
 
 [project]
@@ -22,7 +25,6 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "numpy",
-    "opencv-python>=4.11.0.86",
     "pydantic>=2.11.10",
     "rich>=14.2.0",
     "tyro>=0.9.35",
@@ -30,23 +32,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-hamer = [
-    "hamer[server]",
-]
-da3 = [
-    "open3d[gui]",
-    "depth-anything-3[all]",
-    "xformers>=0.0.33.post1",
-]
-all = [
-    "open3d[gui]",
-    "depth-anything-3[all]",
-    "xformers>=0.0.33.post1",
-    "hamer[server]",
-]
 cv = [
-    "opencv-python>=4.11.0.86",
-    "opencv-python-headless>=4.11.0.86",
+    "opencv-python>=4.9.0.80",
+    "opencv-python-headless",
+]
+sam3d = [
+    "sam3d-objects",
 ]
 
 
@@ -56,6 +47,7 @@ xclients = { workspace = true }
 webpolicy = { git = "https://github.com/mhyatt000/webpolicy" }
 hamer = { git = "https://github.com/mhyatt000/hamer" }
 depth-anything-3 = { git = "https://github.com/ByteDance-Seed/Depth-Anything-3" }
+sam3d-objects = { git = "https://github.com/facebookresearch/sam-3d-objects" }
 
 [project.scripts]
 yourpkg = "yourpkg.cli:main"   # if you expose a CLI
