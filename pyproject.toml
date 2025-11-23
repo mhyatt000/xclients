@@ -7,12 +7,15 @@ packages = ["src/xclients"]
 [tool.uv.extra-build-dependencies]
 xformers = ["torch"]
 gsplat = ["torch"]
+xtcocotools = ["numpy"]
+detectron = ["torch"]
 
 [tool.uv]
 # da3
 override-dependencies = [
 "numpy>=2",
 ]
+no-build-isolation-package = ["xtcocotools", "detectron2"]
 
 [project]
 name = "xclients"
@@ -31,6 +34,11 @@ dependencies = [
 
 [project.optional-dependencies]
 hamer = [
+    # TODO replace mmpose with original as separate
+    # mmpose@git+https://github.com/ViTAE-Transformer/ViTPose@d5216452796c90c6bc29f5c5ec0bdba94366768a
+    "flax>=0.12.1",
+    "torch>=2.9.0",
+    "detectron2",
     "hamer[server]",
 ]
 da3 = [
@@ -56,6 +64,8 @@ xclients = { workspace = true }
 webpolicy = { git = "https://github.com/mhyatt000/webpolicy" }
 hamer = { git = "https://github.com/mhyatt000/hamer" }
 depth-anything-3 = { git = "https://github.com/ByteDance-Seed/Depth-Anything-3" }
+detectron2 = { git = "https://github.com/facebookresearch/detectron2" }
+
 
 [project.scripts]
 yourpkg = "yourpkg.cli:main"   # if you expose a CLI
