@@ -11,7 +11,7 @@ gsplat = ["torch"]
 [tool.uv]
 # da3
 override-dependencies = [
-"numpy>=2", 
+"numpy>=2",
 ]
 
 [project]

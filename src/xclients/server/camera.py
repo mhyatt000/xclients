@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-import base64
 from dataclasses import dataclass
-from typing import Dict
 
 import cv2
 from pydantic import TypeAdapter
-
 from webpolicy.base_policy import BasePolicy
 from webpolicy.server import Server
 
@@ -24,10 +21,10 @@ class CameraPayload:
 
 class CameraPolicy(BasePolicy):
     def __init__(self):
-        self.caps: Dict[int, cv2.VideoCapture] = {}
+        self.caps: dict[int, cv2.VideoCapture] = {}
         self.adapter = TypeAdapter(CameraPayload)
 
-    def step(self, raw: Dict) -> Dict:
+    def step(self, raw: dict) -> dict:
         payload: CameraPayload = self.adapter.validate_python(raw)
 
         cap = self.caps.get(payload.id)
@@ -41,12 +38,7 @@ class CameraPolicy(BasePolicy):
         if not success:
             raise RuntimeError(f"Could not read frame from camera {payload.id}")
 
-        ok, encoded = cv2.imencode(".jpg", frame)
-        if not ok:
-            raise RuntimeError("Could not encode frame as JPEG")
-
-        image_b64 = base64.b64encode(encoded).decode("ascii")
-        return {"id": payload.id, "image": image_b64}
+        return {"id": payload.id, "image": frame}
 
 
 def main(cfg: Config):
