@@ -8,8 +8,8 @@ build-backend = "hatchling.build"
 [tool.uv.workspace]
 members = [
   # "core",
-  "plugins/hamer",
-  "plugins/server_camera",
+  # "plugins/hamer",
+  # "plugins/server_camera",
   # "plugins/server_da3",
   # "plugins/server_sam3do",
 ]

@@ -23,8 +23,8 @@ from util import (
     timing,
 )
 from vitpose_model import ViTPoseModel
-from webpolicy.deploy.base_policy import BasePolicy
-from webpolicy.deploy.server import WebsocketPolicyServer as Server
+from webpolicy.base_policy import BasePolicy
+from webpolicy.server import Server
 
 
 def resize(img, size=(224, 224)):
@@ -131,10 +131,10 @@ class Policy(BasePolicy):
         self.reset()
 
         _impath = Path(__file__).parent.parent / "example_data" / "test1.jpg"
-        _im = cv2.imread(str(_impath))
-        self.infer({"img": _im})
-
-        self.reset()
+        if _impath.exists():
+            _im = cv2.imread(str(_impath))
+            self.step({"img": _im})
+            self.reset()
 
     def reset(self):
         # frame caching for speed
@@ -199,7 +199,7 @@ class Policy(BasePolicy):
         # print(OUT.keys)
         return OUT
 
-    def infer(self, obs: dict):
+    def step(self, obs: dict):
         if obs is None or "img" not in obs or not isinstance(obs["img"], np.ndarray):
             return {}
         self.cfg.fx = obs.get("fx", self.cfg.fx)
@@ -294,7 +294,7 @@ def main(cfg: Config):
         metadata=None,
     )
     print("serving on", cfg.host, cfg.port)
-    server.serve_forever()
+    server.serve()
 
 
 if __name__ == "__main__":
