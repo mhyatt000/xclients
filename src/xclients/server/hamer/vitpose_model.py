@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
+import mmpose
 import numpy as np
 import torch
 import torch.nn as nn
@@ -17,6 +19,8 @@ os.environ["PYOPENGL_PLATFORM"] = "egl"
 # project root directory
 ROOT_DIR = "./"
 VIT_DIR = os.path.join(ROOT_DIR, "third-party/ViTPose")
+# new VIT_DIR is in
+VIT_DIR = str(Path(mmpose.__file__).resolve().parent / ".mim")
 
 
 class ViTPoseModel:
