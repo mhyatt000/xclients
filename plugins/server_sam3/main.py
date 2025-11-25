@@ -1,13 +1,19 @@
 from __future__ import annotations
 
+# from huggingface_hub.utils import HF_HUB_CACHE
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Literal
 from uuid import uuid4
 
+import numpy as np
 import torch
+
+# from transformers import AutoProcessor
+# from transformers import Sam3Processor, Sam3Model
+import tyro
 from PIL import Image
-from pydantic import Field, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from sam3.model.sam3_image_processor import Sam3Processor
 from sam3.model_builder import build_sam3_image_model, build_sam3_video_predictor
 from webpolicy.base_policy import BasePolicy
@@ -21,29 +27,30 @@ class Config:
     device: str | None = None
 
 
-@dataclass
-class ImageRequest:
+class Schema(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+
+class ImageRequest(Schema):
     type: Literal["image"]
-    image_path: Path
+    image: np.ndarray
     text: str
+    confidence: float = 0.5
 
 
-@dataclass
-class VideoRequest:
+class VideoRequest(Schema):
     type: Literal["video"]
     resource_path: Path
     text: str
     frame_index: int = 0
 
 
-@dataclass
-class StartStreamRequest:
+class StartStreamRequest(Schema):
     type: Literal["start_stream"]
     text: str
 
 
-@dataclass
-class StreamFrameRequest:
+class StreamFrameRequest(Schema):
     type: Literal["stream_frame"]
     session_id: str
     frame_path: Path
@@ -61,9 +68,16 @@ class Sam3Policy(BasePolicy):
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
         self.dtype = torch.bfloat16 if self.device.type == "cuda" else torch.float32
 
-        self.model = build_sam3_image_model().to(self.device)
+        self.model = build_sam3_image_model(
+            compile=True,
+        ).to(self.device)
         self.model.eval()
-        self.processor = Sam3Processor(self.model)
+        self.confidence = 0.5
+        self.processor = Sam3Processor(self.model, confidence_threshold=self.confidence)
+
+        # self.model = Sam3Model.from_pretrained("facebook/sam3").to(self.device)
+        # self.processor = Sam3Processor.from_pretrained("facebook/sam3")
+
         self.video_predictor = build_sam3_video_predictor()
 
         self._adapter = TypeAdapter(RequestPayload)
@@ -87,13 +101,27 @@ class Sam3Policy(BasePolicy):
         return self._stream_frame(request)
 
     def _run_image(self, request: ImageRequest) -> dict:
-        image = Image.open(request.image_path).convert("RGB")
-        state = self.processor.set_image(image)
+        if self.confidence != request.confidence:
+            self.confidence = request.confidence
+            self.processor = Sam3Processor(self.model, confidence_threshold=self.confidence)
+
+        img_pil = Image.fromarray(request.image, mode="RGB")
+        state = self.processor.set_image(img_pil)
         outputs = self.processor.set_text_prompt(state=state, prompt=request.text)
 
-        masks = outputs["masks"].detach().cpu().numpy().tolist()
-        boxes = outputs["boxes"].detach().cpu().tolist()
-        scores = outputs["scores"].detach().cpu().tolist()
+        # inputs = self.processor(images=request.image, text=request.text, return_tensors="pt").to(self.device)
+        # with torch.no_grad():
+        # outputs = self.model(**inputs)
+        # results = self.processor.post_process_instance_segmentation(
+        # outputs,
+        # threshold=0.5,
+        # mask_threshold=0.5,
+        # target_sizes=inputs.get("original_sizes").tolist()
+        # )[0]
+
+        masks = outputs["masks"].detach().cpu().numpy()
+        boxes = outputs["boxes"].detach().cpu().half().numpy()
+        scores = outputs["scores"].detach().cpu().half().numpy()
 
         return {"masks": masks, "boxes": boxes, "scores": scores}
 
@@ -159,6 +187,4 @@ def main(cfg: Config) -> None:
 
 
 if __name__ == "__main__":
-    import tyro
-
     main(tyro.cli(Config))
