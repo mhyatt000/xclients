@@ -1,0 +1,12 @@
+[project]
+name = "server-da3"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "depth-anything-3[all]",
+]
+
+[tool.uv.sources]
+depth-anything-3 = { git = "https://github.com/ByteDance-Seed/Depth-Anything-3" }

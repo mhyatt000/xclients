@@ -1,0 +1,15 @@
+[project]
+name = "server_hamer"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    'hamer[server]',
+]
+
+[tool.uv.sources]
+hamer = { git = "https://github.com/mhyatt000/hamer" }
+
+[tool.uv.extra-build-dependencies]
+xtcocotools = ["numpy"]

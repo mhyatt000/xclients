@@ -1,8 +1,11 @@
-import glob, os, torch
+import glob
+import os
+
+import torch
 from depth_anything_3.api import DepthAnything3
 
-def main():
 
+def main():
     device = torch.device("cuda")
     model = DepthAnything3.from_pretrained("depth-anything/DA3NESTED-GIANT-LARGE")
     model = model.to(device=device)
@@ -11,16 +14,17 @@ def main():
     prediction = model.inference(
         images,
     )
-# prediction.processed_images : [N, H, W, 3] uint8   array
+    # prediction.processed_images : [N, H, W, 3] uint8   array
     print(prediction.processed_images.shape)
-# prediction.depth            : [N, H, W]    float32 array
-    print(prediction.depth.shape)  
-# prediction.conf             : [N, H, W]    float32 array
-    print(prediction.conf.shape)  
-# prediction.extrinsics       : [N, 3, 4]    float32 array # opencv w2c or colmap format
+    # prediction.depth            : [N, H, W]    float32 array
+    print(prediction.depth.shape)
+    # prediction.conf             : [N, H, W]    float32 array
+    print(prediction.conf.shape)
+    # prediction.extrinsics       : [N, 3, 4]    float32 array # opencv w2c or colmap format
     print(prediction.extrinsics.shape)
-# prediction.intrinsics       : [N, 3, 3]    float32 array
+    # prediction.intrinsics       : [N, 3, 3]    float32 array
     print(prediction.intrinsics.shape)
+
 
 if __name__ == "__main__":
     main()
