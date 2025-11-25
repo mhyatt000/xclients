@@ -19,7 +19,7 @@ dependencies = [
 
 [tool.uv.sources]
 webpolicy = { git = "https://github.com/mhyatt000/webpolicy" }
-sam3 = { git = "https://github.com/facebookresearch/sam3.git" }
+sam3 = { path = "../../external/sam3", editable = true }
 
 [tool.uv]
 override-dependencies = [
@@ -30,3 +30,8 @@ override-dependencies = [
 name = "pytorch-cu128"
 url = "https://download.pytorch.org/whl/cu128"
 explicit = true
+
+[tool.uv.workspace]
+members = [
+    "sam3",
+]
