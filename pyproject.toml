@@ -11,7 +11,7 @@ members = [
   "plugins/hamer",
   "plugins/server_camera",
   # "plugins/server_da3",
-  "plugins/server_sam3do",
+  # "plugins/server_sam3do",
 ]
 
 
