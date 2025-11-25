@@ -1,20 +1,26 @@
 [project]
 name = "server-sam3do"
 version = "0.1.0"
-description = "Add your description here"
+description = "SAM3 webpolicy server for image and streaming video prompts"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "numpy>=1.26.0",
+    "pillow>=11.1.0",
+    "pydantic>=2.11.10",
+    "sam3",
+    "torch==2.5.1",
+    "tyro>=0.9.35",
+    "webpolicy",
 ]
 
 
 [tool.uv]
 override-dependencies = [
-"torchaudio",
+    "torchaudio",
 ]
 
 
 [tool.uv.overrides]
 torch = "==2.5.1"
 torchaudio = "==2.5.1"
-
