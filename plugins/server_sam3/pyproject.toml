@@ -9,18 +9,24 @@ dependencies = [
     "pillow>=11.1.0",
     "pydantic>=2.11.10",
     "sam3",
-    "torch==2.5.1",
+    "torch==2.7.0",
+    "torchaudio>=2.7.0",
+    "torchvision>=0.22.0",
     "tyro>=0.9.35",
     "webpolicy",
 ]
 
+
+[tool.uv.sources]
+webpolicy = { git = "https://github.com/mhyatt000/webpolicy" }
+sam3 = { git = "https://github.com/facebookresearch/sam3.git" }
 
 [tool.uv]
 override-dependencies = [
     "torchaudio",
 ]
 
-
-[tool.uv.overrides]
-torch = "==2.5.1"
-torchaudio = "==2.5.1"
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
