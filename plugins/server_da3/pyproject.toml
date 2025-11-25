@@ -1,3 +1,9 @@
+[build-system]
+requires = ["hatchling>=1.26", 'torch']
+build-backend = "hatchling.build"
+[tool.hatch.build.targets.wheel]
+packages = ["src/server_da3"]
+
 [project]
 name = "server-da3"
 version = "0.1.0"
@@ -6,11 +12,28 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "depth-anything-3[all]",
+    "torch",
+    "gsplat",
+    "tyro>=0.9.35",
+    "numpy>=1.26.4",
+    "pydantic>=2.12.3",
+    "rich>=14.2.0",
+    "webpolicy",
 ]
 
 [tool.uv.sources]
 depth-anything-3 = { git = "https://github.com/ByteDance-Seed/Depth-Anything-3" }
+webpolicy = { git = "https://github.com/mhyatt000/webpolicy" }
 
 [tool.uv.extra-build-dependencies]
-xformers = ["torch"]
-gsplat = ["torch"]
+server-da3 = ["hatchling>=1.26", "editables"]
+gsplat     = ["torch"]
+xformers   = ["torch"]
+
+
+[project.scripts]
+server-da3 = "server_da3.main:main"  # adjust function name if needed
+
+[tool.uv]
+no-build-isolation-package = ["gsplat", "da3"]
+

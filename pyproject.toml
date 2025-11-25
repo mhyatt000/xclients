@@ -1,7 +1,7 @@
 [build-system]
 requires = ["hatchling>=1.26", 'torch']
 build-backend = "hatchling.build"
-[tool.hatch.build.targets.wheel]
+# [tool.hatch.build.targets.wheel]
 
 # Do NOT put shared runtime deps here unless they’re truly compatible across projects.
 
@@ -10,7 +10,7 @@ members = [
   "core",
   "plugins/hamer",
   "plugins/server_camera",
-  "plugins/server_da3",
+  # "plugins/server_da3",
   "plugins/server_sam3do",
 ]
 
