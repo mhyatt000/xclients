@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-
-# from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -14,13 +12,18 @@ from PIL import Image
 from pydantic import TypeAdapter
 from pydantic.dataclasses import dataclass
 from webpolicy.base_policy import BasePolicy
-from webpolicy.server.server import Server
+from webpolicy.server import Server
 
 
 @dataclass
 class Config:
-    host: str
+    host: str = "0.0.0.0"
     port: int = 8080
+
+    # Model loading
+    model_source: str = "huggingface"  # "huggingface", "repo", or explicit path/model id
+    hf_model_id: str = "depth-anything/da3nested-giant-large"
+    device: str | None = None
 
 
 @dataclass
@@ -44,9 +47,7 @@ class DA3Payload:
 
     export_dir: str | Path | None = None  # Directory to export results
     export_format: str = "mini_npz"  # Export format (mini_npz, npz, glb, ply, gs, gs_video)
-    export_feat_layers: Sequence[int] | None = (
-        None  # Layer indices to export intermediate features from
-    )
+    export_feat_layers: Sequence[int] | None = None  # Layer indices to export intermediate features from
 
     # GLB export parameters
     conf_thresh_percentile: float = (
@@ -65,15 +66,27 @@ class DA3Payload:
 
 
 class DA3Policy(BasePolicy):
-    def __init__(self):
-        self.device = torch.device("cuda")
-        self.model = DepthAnything3.from_pretrained("depth-anything/DA3NESTED-GIANT-LARGE")
+    def __init__(self, cfg: Config):
+        self.device = torch.device(cfg.device or ("cuda" if torch.cuda.is_available() else "cpu"))
+        self.model = self._load_model(cfg)
         self.model = self.model.to(device=self.device)
 
         self.adapter = TypeAdapter(DA3Payload)
         self.oadapter = TypeAdapter(Prediction)
 
-    def infer(self, raw: dict) -> dict:
+    @staticmethod
+    def _load_model(cfg: Config) -> DepthAnything3:
+        if cfg.model_source == "huggingface":
+            return DepthAnything3.from_pretrained(cfg.hf_model_id)
+
+        if cfg.model_source == "repo":
+            # Uses the raw repository weights that come with the installed package.
+            return DepthAnything3.from_pretrained()
+
+        # Allow callers to pass an explicit path or model id.
+        return DepthAnything3.from_pretrained(cfg.model_source)
+
+    def step(self, raw: dict) -> dict:
         payload: DA3Payload = self.adapter.validate_python(raw)
         prediction: Prediction = self.model.inference(
             self.adapter.dump_python(payload, mode="python")
@@ -82,7 +95,7 @@ class DA3Policy(BasePolicy):
 
 
 def main(cfg: Config):
-    policy = DA3Policy()
+    policy = DA3Policy(cfg)
     server = Server(policy, cfg.host, cfg.port)
     server.serve()
 
