@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import numpy as np
@@ -9,8 +10,7 @@ import tyro
 from depth_anything_3.api import DepthAnything3
 from depth_anything_3.specs import Prediction
 from PIL import Image
-from pydantic import TypeAdapter
-from pydantic.dataclasses import dataclass
+from pydantic import BaseModel, ConfigDict, TypeAdapter
 from webpolicy.base_policy import BasePolicy
 from webpolicy.server import Server
 
@@ -23,11 +23,14 @@ class Config:
     # Model loading
     model_source: str = "huggingface"  # "huggingface", "repo", or explicit path/model id
     hf_model_id: str = "depth-anything/da3nested-giant-large"
-    device: str | None = None
+    device: str | None = (
+        None  # Device to run the model on (e.g., "cuda", "cpu"). If None, auto-select.
+    )
 
 
-@dataclass
-class DA3Payload:
+class DA3Payload(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     image: list[
         np.ndarray | Image.Image | str
     ]  # List of input images (numpy arrays, PIL Images, or file paths)
@@ -47,7 +50,9 @@ class DA3Payload:
 
     export_dir: str | Path | None = None  # Directory to export results
     export_format: str = "mini_npz"  # Export format (mini_npz, npz, glb, ply, gs, gs_video)
-    export_feat_layers: Sequence[int] | None = None  # Layer indices to export intermediate features from
+    export_feat_layers: Sequence[int] | None = (
+        None  # Layer indices to export intermediate features from
+    )
 
     # GLB export parameters
     conf_thresh_percentile: float = (
@@ -65,6 +70,10 @@ class DA3Payload:
     export_kwargs: dict | None = None  # additional arguments to export functions.
 
 
+# class DA3Prediction(Prediction,BaseModel):
+# model_config = ConfigDict(arbitrary_types_allowed=True)
+
+
 class DA3Policy(BasePolicy):
     def __init__(self, cfg: Config):
         self.device = torch.device(cfg.device or ("cuda" if torch.cuda.is_available() else "cpu"))
@@ -72,7 +81,7 @@ class DA3Policy(BasePolicy):
         self.model = self.model.to(device=self.device)
 
         self.adapter = TypeAdapter(DA3Payload)
-        self.oadapter = TypeAdapter(Prediction)
+        # self.oadapter = TypeAdapter(Prediction)
 
     @staticmethod
     def _load_model(cfg: Config) -> DepthAnything3:
@@ -88,10 +97,17 @@ class DA3Policy(BasePolicy):
 
     def step(self, raw: dict) -> dict:
         payload: DA3Payload = self.adapter.validate_python(raw)
+        print(payload.infer_gs)
         prediction: Prediction = self.model.inference(
-            self.adapter.dump_python(payload, mode="python")
+            image=payload.image,
+            infer_gs=payload.infer_gs,
+            # self.adapter.dump_python(
+            # mode="python",
+            # )
         )
-        return self.oadapter.dump_python(prediction, mode="python")
+        return asdict(prediction)
+
+        # return self.oadapter.dump_python(prediction, mode="python")
 
 
 def main(cfg: Config):
