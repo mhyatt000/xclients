@@ -8,7 +8,7 @@ dependencies = [
     "numpy>=1.26.0",
     "pillow>=11.1.0",
     "pydantic>=2.11.10",
-    "sam3",
+    "sam3[dev,notebooks,train]",
     "torch==2.7.0",
     "torchaudio>=2.7.0",
     "torchvision>=0.22.0",
