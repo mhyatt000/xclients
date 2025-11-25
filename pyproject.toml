@@ -27,6 +27,7 @@ dependencies = [
     "rich>=14.2.0",
     "tyro>=0.9.35",
     "webpolicy",
+    "sam3 @ git+https://github.com/facebookresearch/sam3.git",
 ]
 
 [project.optional-dependencies]
