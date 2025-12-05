@@ -1,0 +1,16 @@
+[project]
+name = "server-yolo8pose"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.12.3",
+    "rich>=14.2.0",
+    "tyro>=0.9.35",
+    "ultralytics>=8.3.234",
+    "webpolicy",
+]
+
+[tool.uv.sources]
+webpolicy = { git = "https://github.com/mhyatt000/webpolicy" }

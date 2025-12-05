@@ -1,3 +1,6 @@
+#yolo
+*.pt
+
 # hamer
 _DATA
 
