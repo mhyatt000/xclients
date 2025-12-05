@@ -62,9 +62,7 @@ class ViTPoseModel:
         vis_line_thickness: int,
     ) -> tuple[list[dict[str, np.ndarray]], np.ndarray]:
         out = self.predict_pose(image, det_results, box_score_threshold)
-        vis = self.visualize_pose_results(
-            image, out, kpt_score_threshold, vis_dot_radius, vis_line_thickness
-        )
+        vis = self.visualize_pose_results(image, out, kpt_score_threshold, vis_dot_radius, vis_line_thickness)
         return out, vis
 
     def predict_pose(

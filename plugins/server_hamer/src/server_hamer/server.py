@@ -15,16 +15,17 @@ from hamer.models import DEFAULT_CHECKPOINT, download_models, load_hamer
 from hamer.utils import SkeletonRenderer
 from hamer.utils.renderer import Renderer
 from rich.pretty import pprint
-from util import (
+from webpolicy.base_policy import BasePolicy
+from webpolicy.server import Server
+
+from server_hamer.util import (
     detect_humans,
     extract_hand_keypoints,
     init_detector,
     run_hand_reconstruction,
     timing,
 )
-from vitpose_model import ViTPoseModel
-from webpolicy.base_policy import BasePolicy
-from webpolicy.server import Server
+from server_hamer.vitpose_model import ViTPoseModel
 
 
 def resize(img, size=(224, 224)):

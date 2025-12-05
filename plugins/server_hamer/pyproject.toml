@@ -1,3 +1,12 @@
+[build-system]
+requires = ["uv_build>=0.9.15"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+# uv seems nicer than hatchling
+# make sure to have __init__.py in the src/module folder
+module-name = "server_hamer"
+
 [project]
 name = "server_hamer"
 version = "0.1.0"
@@ -5,11 +14,30 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "detectron2",
+    "flax>=0.12.1",
     'hamer[server]',
+    "jax>=0.8.1",
+    "numpy>=2.3.5",
+    "opencv-python>=4.11.0.86",
+    "rich>=14.2.0",
+    "torch>=2.9.1",
+    "tyro>=0.9.35",
+    'webpolicy',
 ]
 
 [tool.uv.sources]
 hamer = { git = "https://github.com/mhyatt000/hamer" }
+webpolicy = { git = "https://github.com/mhyatt000/webpolicy" }
+detectron2 = { git = "https://github.com/facebookresearch/detectron2" }
 
 [tool.uv.extra-build-dependencies]
 xtcocotools = ["numpy"]
+
+# isorting
+
+[tool.ruff]
+src = ["src", ".", "server_hamer"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["server_hamer"]

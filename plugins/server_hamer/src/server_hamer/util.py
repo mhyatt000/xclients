@@ -11,7 +11,6 @@ import imageio
 import jax
 import numpy as np
 import torch
-from array_util import keyp2bbox
 from flax.traverse_util import flatten_dict
 from hamer.configs import CACHE_DIR_HAMER
 from hamer.datasets.vitdet_dataset import DEFAULT_MEAN, DEFAULT_STD, ViTDetDataset
@@ -20,9 +19,11 @@ from hamer.utils import SkeletonRenderer, recursive_to
 from hamer.utils.geometry import perspective_projection
 from hamer.utils.render_openpose import render_openpose
 from hamer.utils.renderer import Renderer, cam_crop_to_full
-from log import logger
 from PIL import Image
-from vitpose_model import ViTPoseModel
+
+from server_hamer.array_util import keyp2bbox
+from server_hamer.log import logger
+from server_hamer.vitpose_model import ViTPoseModel
 
 # from manotorch.manolayer import ManoLayer, MANOOutput
 
@@ -216,12 +217,8 @@ def run_hand_reconstruction(
 
     # @timing()
     def mk_dataset():
-        dataset = ViTDetDataset(
-            model_cfg, img_cv2, bboxes, is_right, rescale_factor=args.rescale_factor
-        )
-        dataloader = torch.utils.data.DataLoader(
-            dataset, batch_size=8, shuffle=False, num_workers=0
-        )
+        dataset = ViTDetDataset(model_cfg, img_cv2, bboxes, is_right, rescale_factor=args.rescale_factor)
+        dataloader = torch.utils.data.DataLoader(dataset, batch_size=8, shuffle=False, num_workers=0)
         return dataset, dataloader
 
     dataset, dataloader = mk_dataset()
@@ -290,9 +287,7 @@ def run_hand_reconstruction(
         out["pred_vertices"] = m.vertices
         """
 
-        pred_cam_t_full, img_size, scaled_focal_length = process_batch(
-            batch, out, model_cfg, force_focal=args.fx
-        )
+        pred_cam_t_full, img_size, scaled_focal_length = process_batch(batch, out, model_cfg, force_focal=args.fx)
 
         OUT.add(
             **{
@@ -336,18 +331,13 @@ def process_batch(batch, out, model_cfg, force_focal=None):
     scaled_focal_length = cam_fxy / model_cfg.MODEL.IMAGE_SIZE * img_size.max()
 
     pred_cam_t_full = (
-        cam_crop_to_full(pred_cam, box_center, box_size, img_size, scaled_focal_length)
-        .detach()
-        .cpu()
-        .numpy()
+        cam_crop_to_full(pred_cam, box_center, box_size, img_size, scaled_focal_length).detach().cpu().numpy()
     )
     return pred_cam_t_full, img_size, scaled_focal_length
 
 
 # @timing()
-def render_hand_view(
-    renderer: Renderer, batch, out, pred_cam_t_full, img_size, img_path, S: Store, args
-):
+def render_hand_view(renderer: Renderer, batch, out, pred_cam_t_full, img_size, img_path, S: Store, args):
     """render hand view and save mesh if needed"""
 
     batch_size = batch["img"].shape[0]
@@ -433,9 +423,7 @@ def render_front_view(
 
     input_img = img_cv2.astype(np.float32)[:, :, ::-1] / 255.0
     input_img = np.concatenate([input_img, np.ones_like(input_img[:, :, :1])], axis=2)
-    input_img_overlay = (
-        input_img[:, :, :3] * (1 - cam_view[:, :, 3:]) + cam_view[:, :, :3] * cam_view[:, :, 3:]
-    )
+    input_img_overlay = input_img[:, :, :3] * (1 - cam_view[:, :, 3:]) + cam_view[:, :, :3] * cam_view[:, :, 3:]
 
     img_fname, _ = os.path.splitext(os.path.basename(img_path))
     # cv2.imwrite(
@@ -473,9 +461,7 @@ def init_regnety():
     from detectron2 import model_zoo  # noqa
     from hamer.utils.utils_detectron2 import DefaultPredictor_Lazy  # noqa
 
-    detectron2_cfg = model_zoo.get_config(
-        "new_baselines/mask_rcnn_regnety_4gf_dds_FPN_400ep_LSJ.py", trained=True
-    )
+    detectron2_cfg = model_zoo.get_config("new_baselines/mask_rcnn_regnety_4gf_dds_FPN_400ep_LSJ.py", trained=True)
     detectron2_cfg.model.roi_heads.box_predictor.test_score_thresh = 0.5
     detectron2_cfg.model.roi_heads.box_predictor.test_nms_thresh = 0.4
     detector = DefaultPredictor_Lazy(detectron2_cfg)
@@ -556,9 +542,7 @@ def plot_cropped(img, out):
         points=points_3d_scaled[None],
         translation=torch.zeros_like(cam_crop)[None],
         focal_length=torch.full((1, 2), focal_length),
-        camera_center=torch.tensor(
-            [img.shape[1] / 2 - w / 2, img.shape[0] - h / 2], dtype=torch.float
-        ).reshape(1, 2),
+        camera_center=torch.tensor([img.shape[1] / 2 - w / 2, img.shape[0] - h / 2], dtype=torch.float).reshape(1, 2),
     )[0]  # remove batch dim
 
     # Add confidence = 1
@@ -612,9 +596,7 @@ def main(cfg: Config):
     for i, img in enumerate(reader):
         try:
             out, front = infer(i, img, detector, vitpose, device, model, model_cfg, renderer)
-            out = jax.tree.map(
-                lambda x: x[0], out.data, is_leaf=is_leaf
-            )  # everything is wrapped in list
+            out = jax.tree.map(lambda x: x[0], out.data, is_leaf=is_leaf)  # everything is wrapped in list
 
             out = flatten_dict(out)
 
