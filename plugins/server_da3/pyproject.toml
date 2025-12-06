@@ -14,6 +14,7 @@ dependencies = [
     "rich>=14.2.0",
     "webpolicy",
     "xformers==0.0.12",
+    "trimesh>=4.10.0",
 ]
 
 [tool.uv.sources]

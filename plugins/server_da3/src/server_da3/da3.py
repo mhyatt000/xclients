@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import enum
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -9,10 +10,20 @@ import torch
 import tyro
 from depth_anything_3.api import DepthAnything3
 from depth_anything_3.specs import Prediction
+from depth_anything_3.utils.export.glb import (
+    _compute_alignment_transform_first_cam_glTF_center_by_points,
+    _depths_to_world_points_with_colors,
+    _filter_and_downsample,
+)
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, TypeAdapter
 from webpolicy.base_policy import BasePolicy
 from webpolicy.server import Server
+
+
+class ModelChoice(enum.Enum):
+    G = "depth-anything/da3nested-giant-large"
+    L = "depth-anything/da3metric-large"
 
 
 @dataclass
@@ -22,7 +33,7 @@ class Config:
 
     # Model loading
     model_source: str = "huggingface"  # "huggingface", "repo", or explicit path/model id
-    hf_model_id: str = "depth-anything/da3nested-giant-large"
+    hf_model_id: ModelChoice = ModelChoice.G  # HuggingFace model ID (if using "huggingface" source)
     device: str | None = (
         None  # Device to run the model on (e.g., "cuda", "cpu"). If None, auto-select.
     )
@@ -86,7 +97,7 @@ class DA3Policy(BasePolicy):
     @staticmethod
     def _load_model(cfg: Config) -> DepthAnything3:
         if cfg.model_source == "huggingface":
-            return DepthAnything3.from_pretrained(cfg.hf_model_id)
+            return DepthAnything3.from_pretrained(cfg.hf_model_id.value)
 
         if cfg.model_source == "repo":
             # Uses the raw repository weights that come with the installed package.
@@ -94,6 +105,53 @@ class DA3Policy(BasePolicy):
 
         # Allow callers to pass an explicit path or model id.
         return DepthAnything3.from_pretrained(cfg.model_source)
+
+    def _step_pcd(self, prediction: Prediction):
+        # 3) Confidence threshold (if no conf, then no filtering)
+
+        num_max_points: int = 1_000_000
+        conf_thresh: float = 1.05
+        filter_black_bg, filter_white_bg = True, True
+        filter_black_bg, filter_white_bg = False, False
+        conf_thresh_percentile: float = 40.0
+
+        if filter_black_bg:
+            prediction.conf[(prediction.processed_images < 16).all(axis=-1)] = 1.0
+        if filter_white_bg:
+            prediction.conf[(prediction.processed_images >= 240).all(axis=-1)] = 1.0
+
+        # conf_thresh = get_conf_thresh(
+        # prediction,
+        # getattr(prediction, "sky_mask", None),
+        # conf_thresh,
+        # conf_thresh_percentile,
+        # ensure_thresh_percentile,
+        # )
+        images_u8 = prediction.processed_images  # (N,H,W,3) uint8
+        conf_thresh = np.percentile(prediction.conf, conf_thresh_percentile)
+
+        # 4) Back-project to world coordinates and get colors (world frame)
+        points, colors = _depths_to_world_points_with_colors(
+            prediction.depth,
+            prediction.intrinsics,
+            prediction.extrinsics,  # w2c
+            images_u8,
+            prediction.conf,
+            conf_thresh,
+        )
+
+        # 5) Based on first camera orientation + glTF axis system, center by point cloud,
+        # construct alignment transform, and apply to point cloud
+        _compute_alignment_transform_first_cam_glTF_center_by_points(
+            prediction.extrinsics[0], points
+        )  # (4,4)
+
+        # if points.shape[0] > 0:
+        # points = trimesh.transform_points(points, A)
+
+        # 6) Clean + downsample
+        points, colors = _filter_and_downsample(points, colors, num_max_points)
+        return points, colors
 
     def step(self, raw: dict) -> dict:
         payload: DA3Payload = self.adapter.validate_python(raw)
@@ -105,7 +163,11 @@ class DA3Policy(BasePolicy):
             # mode="python",
             # )
         )
-        return asdict(prediction)
+        points, colors = self._step_pcd(prediction)
+        prediction = asdict(prediction)
+        prediction["points"] = points
+        prediction["colors"] = colors
+        return prediction
 
         # return self.oadapter.dump_python(prediction, mode="python")
 
