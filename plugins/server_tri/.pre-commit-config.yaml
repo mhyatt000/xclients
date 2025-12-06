@@ -1,0 +1,54 @@
+default_language_version:
+    python: python3.11
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-yaml
+      - id: check-ast
+      - id: check-added-large-files
+        exclude: ^examples/
+      - id: check-case-conflict
+      - id: check-merge-conflict
+        # - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: detect-private-key
+      - id: debug-statements
+        exclude: ^experiments/
+          # - repo: https://github.com/astral-sh/uv-pre-commit
+          # rev: 0.5.14
+          # hooks:
+          # - id: uv-lock
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.13.1
+    hooks:
+      # Run the linter.
+      - id: ruff
+        args: [--fix, --unsafe-fixes, --config=pyproject.toml]
+      - id: ruff-format
+        # - repo: https://github.com/pre-commit/pre-commit-hooks
+        # rev: v4.6.0
+        # hooks:
+        # - id: end-of-file-fixer
+        # - id: trailing-whitespace
+        #   - repo: local
+        #     hooks:
+        #       - id: pytest
+        #         name: pytest (uv, full suite)
+        #         entry: uv run pytest -ra --maxfail=0
+        #         language: system
+        #         types: [python]
+        #         pass_filenames: false
+        #       - id: pytest
+        #         name: pytest (uv, coverage)
+        #         entry: bash -c 'uv run pytest --cov --cov-report=term-missing || true'
+        #         language: system
+        #         types: [python]
+        #         pass_filenames: false
+  - repo: https://github.com/srstevenson/nb-clean
+    rev: 4.0.1
+    hooks:
+      - id: nb-clean
+        args:
+          - --remove-empty-cells
+          - --preserve-cell-outputs
