@@ -1,32 +1,41 @@
 import sys
 from pathlib import Path
 
-# Ensure external/wilor is added early so wilor package imports succeed
-PLUGIN_DIR = Path(__file__).parent
-# WILOR_ROOT = (PLUGIN_DIR / "../../external/wilor").resolve()
-# sys.path.append(str(WILOR_ROOT))
-from .src.server_wilor.server import WilorModel
+from server_wilor.server import WilorModel
 from dataclasses import dataclass
 import tyro
+import torch
+import cv2
+from wilor_mini.pipelines.wilor_hand_pose3d_estimation_pipeline import WiLorHandPose3dEstimationPipeline
 
 
 @dataclass
 class WilorConfig:
     # 未来可以添加更多参数，比如模型路径、是否启用GPU等
-    pass
+    host: str = "0.0.0.0"
+    port: int = 8007
 
+def demo():
 
-def load(cfg: WilorConfig = None):
-    """Factory function for xclients to load the policy."""
-    # cfg 未来可以用于配置模型，现在先保留接口
-    print("[main] Loading WilorModel...")
-    return WilorModel()
+    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    dtype = torch.float16
 
+    pipe = WiLorHandPose3dEstimationPipeline(device=device, dtype=dtype)
+    img_path = "assets/img.png"
+    image = cv2.imread(img_path)
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    outputs = pipe.predict(image)
+    print(outputs)
+
+    print(len(outputs))
+    print(outputs[0]['wilor_preds'].keys())
 
 def main(cfg: WilorConfig):
     """Standalone debug mode."""
     print("[main] Running WilorModel standalone...")
-    model = load(cfg)
+
+    demo()
+    # model = load(cfg)
 
     # TODO：这里可以加入你自己的调试图片路径
     # image = cv2.imread("test.jpg")
