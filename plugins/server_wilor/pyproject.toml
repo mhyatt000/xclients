@@ -19,13 +19,21 @@ dependencies = [
     "rich>=14.2.0",
     "tyro>=0.9.35",
     'webpolicy',
-    "wilor",
     "wilor-mini",
 ]
 
 [tool.uv.sources]
 webpolicy = { git = "https://github.com/mhyatt000/webpolicy" }
-wilor = { workspace = true }
 chumpy = { git = "https://github.com/mhyatt000/chumpy" }
 wilor-mini = { git = "https://github.com/mhyatt000/wilor-mini" }
-# TODO add wilor
+server-wilor = { workspace = true, editable = true }
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pyyaml>=6.0.3",
+    "server-wilor",
+]
+
+[tool.uv]
+dev-dependencies = ["pytest"]
