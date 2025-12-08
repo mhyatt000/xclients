@@ -1,0 +1,39 @@
+[build-system]
+requires = ["uv_build>=0.9.15"]
+build-backend = "uv_build"
+
+# [tool.uv.build-backend]
+# uv seems nicer than hatchling
+# make sure to have __init__.py in the src/module folder
+# module-name = "server_hamer"
+
+[project]
+name = "server-wilor"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "chumpy",
+    "numpy",
+    "rich>=14.2.0",
+    "tyro>=0.9.35",
+    'webpolicy',
+    "wilor-mini",
+]
+
+[tool.uv.sources]
+webpolicy = { git = "https://github.com/mhyatt000/webpolicy" }
+chumpy = { git = "https://github.com/mhyatt000/chumpy" }
+wilor-mini = { git = "https://github.com/mhyatt000/wilor-mini" }
+server-wilor = { workspace = true, editable = true }
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pyyaml>=6.0.3",
+    "server-wilor",
+]
+
+[tool.uv]
+dev-dependencies = ["pytest"]

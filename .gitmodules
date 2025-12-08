@@ -4,3 +4,6 @@
 [submodule "external/hamer"]
 	path = external/hamer
 	url = https://github.com/mhyatt000/hamer
+[submodule "external/wilor"]
+	path = external/wilor
+	url = https://github.com/rolpotamias/WiLoR.git
