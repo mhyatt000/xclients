@@ -1125,6 +1125,14 @@ wheels = [
 ]
 
 [[package]]
+name = "nvdiffrast"
+version = "0.4.0"
+source = { git = "https://github.com/NVlabs/nvdiffrast.git#253ac4fcea7de5f396371124af597e6cc957bfae" }
+dependencies = [
+    { name = "numpy" },
+]
+
+[[package]]
 name = "nvidia-cublas-cu12"
 version = "12.8.4.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1789,18 +1797,24 @@ wheels = [
 [[package]]
 name = "server-roboreg"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
+    { name = "jax" },
+    { name = "nvdiffrast" },
     { name = "rich" },
     { name = "roboreg" },
+    { name = "tqdm" },
     { name = "tyro" },
     { name = "webpolicy" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "jax", specifier = ">=0.8.1" },
+    { name = "nvdiffrast", git = "https://github.com/NVlabs/nvdiffrast.git" },
     { name = "rich", specifier = ">=14.2.0" },
     { name = "roboreg", directory = "../../external/roboreg" },
+    { name = "tqdm", specifier = ">=4.67.1" },
     { name = "tyro", specifier = ">=0.9.35" },
     { name = "webpolicy", git = "https://github.com/mhyatt000/webpolicy" },
 ]

@@ -1,3 +1,4 @@
+import jax
 import numpy as np
 import torch
 import tyro
@@ -17,6 +18,7 @@ from webpolicy.base_policy import BasePolicy
 from webpolicy.server import Server
 
 from server_roboreg.common import HydraConfig
+from server_roboreg.render import Renderer, RendererConfig
 
 
 class Hydra(BasePolicy):
@@ -42,8 +44,8 @@ class Hydra(BasePolicy):
         self.urdf_parser = parser
         self.root_link_name = root
         self.end_link_name = end
-
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.r = None
 
     # --------------------------------------------------------
     # STEP
@@ -58,6 +60,12 @@ class Hydra(BasePolicy):
         }
         """
 
+        if not payload:
+            self.hist = []
+            return {}
+
+        print(payload.keys())
+
         # add incoming pose
         self.hist.append(payload)
 
@@ -68,10 +76,21 @@ class Hydra(BasePolicy):
         # run optimization
         HT = self._run_hydra(self.hist)
 
-        # reset for next batch
-        self.hist = []
+        if self.r is None:
+            self.r = Renderer(
+                self.cfg,
+                RendererConfig(),
+                intr=payload["intrinsics"],
+                extr=HT,
+                height=payload["depth"].shape[0],
+                width=payload["depth"].shape[1],
+            )
+        hist = jax.tree.map(lambda *x: np.stack(x), *self.hist)
+        out = self.render(hist)
 
-        return {"HT": HT}
+        out = out | {"HT": HT}
+        print(jax.tree.map(lambda x: type(x), out))
+        return out
 
     # --------------------------------------------------------
     # CORE HYDRA PIPELINE
@@ -183,9 +202,7 @@ class Hydra(BasePolicy):
         return HT.cpu().numpy()
 
     def render(self, payload: dict) -> dict:
-        out = self.r(payload)  # {overlay, render}
-        payload = payload | out
-        return payload
+        return self.r.step(payload)  # {overlay, render}
 
 
 def main(cfg: HydraConfig):

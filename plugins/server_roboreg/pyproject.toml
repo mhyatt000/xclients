@@ -1,3 +1,11 @@
+[build-system]
+requires = ["uv_build>=0.9.15"]
+build-backend = "uv_build"
+
+# nvdiffrast requires torch to build
+[tool.uv.extra-build-dependencies]
+nvdiffrast = ["torch"]
+
 [project]
 name = "server-roboreg"
 version = "0.1.0"
@@ -5,12 +13,17 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    # "diffrp-nvdiffrast>=0.3.3.1",
+    "jax>=0.8.1",
     "rich>=14.2.0",
     "roboreg",
     "tyro>=0.9.35",
     "webpolicy",
+    "nvdiffrast",
+    "tqdm>=4.67.1",
 ]
 
 [tool.uv.sources]
 roboreg = { path = "../../external/roboreg" }
 webpolicy = { git = "https://github.com/mhyatt000/webpolicy" }
+nvdiffrast = { git = "https://github.com/NVlabs/nvdiffrast.git" }
