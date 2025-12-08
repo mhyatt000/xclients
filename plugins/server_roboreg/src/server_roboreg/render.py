@@ -3,12 +3,23 @@
 from __future__ import annotations
 
 import os
-from typing import List
+from dataclasses import dataclass
 
 import numpy as np
 import torch
+from roboreg.differentiable import VirtualCamera
 from roboreg.util import overlay_mask
-from roboreg.util.factories import create_robot_scene, create_virtual_camera
+from roboreg.util.factories import create_robot_scene
+
+from server_roboreg.common import HydraConfig
+
+
+@dataclass
+class RendererConfig:
+    collision_meshes: bool = (False,)
+    color: str = ("b",)
+    max_jobs: int = (2,)
+    batch_size: int = (1,)
 
 
 class Renderer:
@@ -22,40 +33,39 @@ class Renderer:
 
     def __init__(
         self,
-        *,
-        camera_info_file: str,
-        extrinsics_file: str,
-        ros_package: str = "lbr_description",
-        xacro_path: str = "urdf/med7/med7.xacro",
-        root_link_name: str = "",
-        end_link_name: str = "",
-        collision_meshes: bool = False,
-        color: str = "b",
-        max_jobs: int = 2,
-        batch_size: int = 1,
-        device: str | torch.device | None = None,
+        cfg: HydraConfig,
+        rcfg: RendererConfig,
+        intr: np.ndarray,
+        extr: np.ndarray,
+        height: int,
+        width: int,
     ) -> None:
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        os.environ["MAX_JOBS"] = str(max_jobs)
+        self.cfg, self.rcfg = cfg, rcfg
+
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        os.environ["MAX_JOBS"] = str(self.rcfg.max_jobs)
 
         camera = {
-            "camera": create_virtual_camera(
-                camera_info_file=camera_info_file,
-                extrinsics_file=extrinsics_file,
+            "camera": VirtualCamera(
+                resolution=[height, width],
+                intrinsics=intr,
+                extrinsics=extr,
                 device=self.device,
             )
         }
+
         self.scene = create_robot_scene(
-            batch_size=batch_size,
-            ros_package=ros_package,
-            xacro_path=xacro_path,
-            root_link_name=root_link_name,
-            end_link_name=end_link_name,
+            batch_size=rcfg.batch_size,
+            ros_package=cfg.ros_package,
+            xacro_path=cfg.xacro_path,
+            root_link_name=cfg.root_link_name,
+            end_link_name=cfg.end_link_name,
             cameras=camera,
             device=self.device,
-            collision=collision_meshes,
+            collision=rcfg.collision_meshes,
         )
-        self.color = color
+
+        self.color = rcfg.color
         self.camera_name = next(iter(self.scene.cameras.keys()))
 
     @staticmethod
@@ -68,7 +78,7 @@ class Renderer:
             data = np.expand_dims(data, axis=0)
         return data
 
-    def step(self, payload: dict) -> List[np.ndarray]:
+    def step(self, payload: dict) -> list[np.ndarray]:
         """
         Render overlays for the provided payload.
 
@@ -90,7 +100,7 @@ class Renderer:
         renders = self.scene.observe_from(self.camera_name)
         render_masks = (renders * 255.0).squeeze(-1).cpu().numpy().astype(np.uint8)
 
-        overlays: List[np.ndarray] = []
+        overlays: list[np.ndarray] = []
         for image, render in zip(images_np, render_masks, strict=False):
             overlays.append(overlay_mask(image, render, self.color, scale=1.0))
-        return overlays
+        return {"overlays": overlays, "render_masks": render_masks}
