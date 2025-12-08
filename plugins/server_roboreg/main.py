@@ -1,5 +1,6 @@
 import tyro
-from server_roboreg.hydra import Hydra, HydraConfig
+from server_roboreg.common import HydraConfig
+from server_roboreg.hydra import Hydra
 from webpolicy.server import Server
 
 
