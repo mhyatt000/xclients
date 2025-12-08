@@ -4,3 +4,6 @@
 [submodule "external/hamer"]
 	path = external/hamer
 	url = https://github.com/mhyatt000/hamer
+[submodule "external/roboreg"]
+	path = external/roboreg
+	url = https://github.com/lbr-stack/roboreg

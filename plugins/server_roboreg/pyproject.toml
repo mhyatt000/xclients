@@ -1,0 +1,16 @@
+[project]
+name = "server-roboreg"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "rich>=14.2.0",
+    "roboreg",
+    "tyro>=0.9.35",
+    "webpolicy",
+]
+
+[tool.uv.sources]
+roboreg = { path = "../../external/roboreg" }
+webpolicy = { git = "https://github.com/mhyatt000/webpolicy" }
