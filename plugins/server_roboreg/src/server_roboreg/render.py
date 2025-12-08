@@ -107,12 +107,14 @@ class Renderer:
         print(joints.shape, images_np.shape)
 
         overlays: list[np.ndarray] = []
-        for j, _image in tqdm(zip(joints, images_np, strict=False)):
+        for j, im in tqdm(zip(joints, images_np, strict=False)):
+            print(j.shape, im.shape)
             self.scene.robot.configure(j.reshape(1, -1))
             renders = self.scene.observe_from(self.camera_name)
             render_masks = (renders * 255.0).squeeze(-1).cpu().numpy().astype(np.uint8)
+            print(render_masks.shape)
 
-            for im, render in zip(images_np, render_masks, strict=False):
-                overlays.append(overlay_mask(im, render, self.color, scale=1.0))
+            # for im, render in zip(images_np, render_masks, strict=False):
+            overlays.append(overlay_mask(im, render_masks[0], self.color, scale=1.0))
 
         return {"overlays": overlays}
