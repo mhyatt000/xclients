@@ -1,6 +1,13 @@
-def main():
-    print("Hello from server-roboreg!")
+import tyro
+from server_roboreg.hydra import Hydra, HydraConfig
+from webpolicy.server import Server
+
+
+def main(cfg: HydraConfig):
+    policy = Hydra(cfg)
+    server = Server(policy, cfg.host, cfg.port)
+    server.serve()
 
 
 if __name__ == "__main__":
-    main()
+    main(tyro.cli(HydraConfig))
