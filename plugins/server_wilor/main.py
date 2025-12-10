@@ -1,18 +1,18 @@
 import sys
 from pathlib import Path
-
-
-from server_wilor.server import WilorModel
 from dataclasses import dataclass
 import tyro
 import torch
 import cv2
-from wilor_mini.pipelines.wilor_hand_pose3d_estimation_pipeline import WiLorHandPose3dEstimationPipeline
 
+from wilor_mini.pipelines.wilor_hand_pose3d_estimation_pipeline import WiLorHandPose3dEstimationPipeline
+from webpolicy.base_policy import BasePolicy
+from webpolicy.server import Server
+
+# from server_wilor.server import WilorModel
 
 @dataclass
 class WilorConfig:
-    # 未来可以添加更多参数，比如模型路径、是否启用GPU等
     host: str = "0.0.0.0"
     port: int = 8007
 
@@ -32,27 +32,27 @@ def demo():
     print(outputs[0]['wilor_preds'].keys())
 
     
+class WilorPolicy(BasePolicy):
+
+    def __init__(self, cfg: WilorConfig):
+        self.cfg = cfg
+        self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        dtype = torch.float16
+        self.pipe = WiLorHandPose3dEstimationPipeline(device=self.device, dtype=dtype)
+
+    def step(self, payload: dict) -> dict:
+        image = payload['image']
+        out = self.pipe.predict(image)
+        # TODO use jax.tree.map(lambda *xs: np.stack([xs]) , *out) if multiple batch
+        return out[0]
 
 def main(cfg: WilorConfig):
     """Standalone debug mode."""
-    print("[main] Running WilorModel standalone...")
 
-    demo()
-    # model = load(cfg)
+    server = Server(policy=WilorPolicy(cfg), host=cfg.host, port=cfg.port)
+    server.serve()
+    # demo()
 
-    # TODO：这里可以加入你自己的调试图片路径
-    # image = cv2.imread("test.jpg")
-    # result = model.step(image)
-    # print(result)
-
-    print("[main] WilorModel loaded successfully (debug mode).")
-
-def load():
-        """
-        SAM3 server expects each plugin to expose a `load()` function
-        that returns an initialized model instance.
-        """
-        return WilorModel()    
 
 if __name__ == "__main__":
     main(tyro.cli(WilorConfig))
