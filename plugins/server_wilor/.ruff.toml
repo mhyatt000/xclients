@@ -1,0 +1,85 @@
+target-version = "py311"
+line-length = 120
+
+[lint]
+# https://docs.astral.sh/ruff/rules/
+select = [  # list of rule codes Ruff should check
+    "E",    # pycodestyle (includes E4/E7; whitespace/statement/import style)
+    "W",    # pycodestyle whitespace-specific rules
+    "F",    # pyflakes (undefined names, unused vars/imports, etc.)
+    "I",    # isort (import sorting/merging)
+    "UP",   # pyupgrade: modernize syntax based on target-version
+    "C4",   # flake8-comprehensions: prefer comprehensions / remove redundant wrappers
+    "SIM",  # flake8-simplify: simplify boolean logic / control flow
+    "PIE",  # flake8-pie: small safe cleanups & niceties
+    "PERF", # perflint: safe micro-optimizations
+    "ISC",  # implicit string concatenation checks (see ignore for ISC001)
+    "RUF",  # Ruff-specific rules (e.g., remove unused `# noqa`)
+    #
+    "T10",  # flake8-debugger: breakpoint()/pdb/ipdb/etc.
+    "T20",  # flake8-print: print()/pprint()
+]
+ignore = [ # exceptions to select
+    "E741",   # ambiguous variable name (like l, O, I)
+    "F841",   # assigned but unused variable
+    "F821",   # undefined name
+    "E731",   # do not assign a lambda (style preference)
+    "E722",   # do not use bare except (style preference)
+    "E501",   # line too long (let the formatter handle wrapping)
+    "UP035",
+    "UP015", #  Unnecessary mode argument open('r') -> open()
+    "UP031", # Use format specifiers instead of percent format
+    #
+    "F722",   # Conflicts with array typing.
+    "T201",   # We use print statements.
+    "PD008",  # Lots of false positives.
+    "ISC001", # Disabling to support ruff format.
+    #
+    "RUF009", # Do not perform function call in dataclass defaults
+    # "RUF059", # Unpacked variable is never used
+    "PIE796", # Enum contains duplicate value:
+    "E402", # module import not at top of file
+]
+
+# whitelist potentially 'unsafe' linter fixes
+fixable = [
+    "I", "W", "E4", "E7",
+    "B",    # flake8-bugbear: likely bugs / risky patterns
+    "C4",     # comprehension cleanups
+    "E702", #  Multiple statements on one line (semicolon)
+    "F401",   # unused imports
+    "F541", # f-string without any placeholders
+    "UP037", # Remove quotes from type annotation
+    "SIM",    # simplify obvious boolean/control-flow patterns
+    "SIM113", # Use `enumerate()` for index variable `i` in `for` loop
+    "PIE",    # tiny safe cleanups
+    "PERF",   # safe micro-optimizations
+    "RUF001", # String contains ambiguous `–` (EN DASH). Did you mean `-` (HYPHEN-MINUS)?
+    "RUF022", #  `__all__` is not sorted
+    "RUF100", # remove unused `# noqa`
+    "PTH",  # flake8-use-pathlib: prefer pathlib.Path over os.path/open
+    "UP004", # Class `OpenDRRenderer` inherits from `object`
+    "UP006",  # Use `list` instead of `List` for type annotation
+    "UP007",  # Use `X | Y` for type annotations
+    "UP028", # Replace `yield` over `for` loop with `yield from`
+    "UP034", # Avoid extraneous parentheses
+    "UP045",  # Use `X | None` for type annotations
+]
+
+# blacklist linter fixes
+unfixable = [
+    "RUF012", # Mutable class attributes should be annotated with `typing.ClassVar`
+    "RUF059", # Unpacked variable `pos` is never used
+]
+
+[lint.per-file-ignores]
+"**/__init__.py" = ["F401"] # allow unused imports in top-level __init__.py
+"tests/**"       = ["T201","T203"] # allow print/pprint in tests
+
+[lint.isort]
+order-by-type = false
+force-single-line = false
+force-sort-within-sections = true
+single-line-exclusions = ["collections.abc", "typing", "typing_extensions"]
+required-imports = ["from __future__ import annotations"]
+# section-order = ["futures", "standard_library", "third_party", "first_party", "local_folder"]
