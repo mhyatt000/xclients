@@ -5,23 +5,22 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import cv2
-import numpy as np
-import pycolmap
-import rerun as rr
-import tyro
 from einops import rearrange
 from jaxtyping import Float, Int
+import numpy as np
 from numpy import ndarray
+
+# import pycolmap
+import rerun as rr
 from rich import print
+import tyro
 from webpolicy.client import Client
 
+from xclients.core import tf as xctf
 from xclients.core.cfg import Config
-from xclients.core.run import ez_load_urdf
-from xclients.core.tf import FLU2RDF
-from xclients.tri import read
-from xclients.tri.camera_parameters import Extrinsics, Intrinsics, PinholeParameters
-from xclients.tri.rerun_util import blueprint
-from xclients.tri.rerun_util.log import log_pinhole
+from xclients.core.run import blueprint
+from xclients.core.run.fustrum import log_fustrum
+from xclients.core.run.rerun_urdf import ez_load_urdf
 
 np.set_printoptions(suppress=True, precision=2)
 
@@ -66,6 +65,62 @@ joint_pairs = [
 ]
 
 
+# MANO joint order
+# 21 keypoints
+mano_joints = {
+    0: "Wrist",
+    1: "Thumb_MCP",
+    2: "Thumb_PIP",
+    3: "Thumb_DIP",
+    4: "Thumb_Tip",
+    5: "Index_MCP",
+    6: "Index_PIP",
+    7: "Index_DIP",
+    8: "Index_Tip",
+    9: "Middle_MCP",
+    10: "Middle_PIP",
+    11: "Middle_DIP",
+    12: "Middle_Tip",
+    13: "Ring_MCP",
+    14: "Ring_PIP",
+    15: "Ring_DIP",
+    16: "Ring_Tip",
+    17: "Pinky_MCP",
+    18: "Pinky_PIP",
+    19: "Pinky_DIP",
+    20: "Pinky_Tip",
+}
+mano_joint_pairs = [
+    (0, 1),
+    (1, 2),
+    (2, 3),
+    (3, 4),  # Thumb
+    (0, 5),
+    (5, 6),
+    (6, 7),
+    (7, 8),  # Index
+    (0, 9),
+    (9, 10),
+    (10, 11),
+    (11, 12),  # Middle
+    (0, 13),
+    (13, 14),
+    (14, 15),
+    (15, 16),  # Ring
+    (0, 17),
+    (17, 18),
+    (18, 19),
+    (19, 20),  # Pinky
+]
+
+colors = {
+    "Wrist": [1.0, 1.0, 0.0],
+    "MCP_PIP": [1.0, 0.0, 0.0],
+    "PIP_DIP": [0.0, 1.0, 0.0],
+    "DIP_Tip": [0.0, 0.0, 1.0],
+}
+
+
 def batch_triangulate(
     keypoints_2d: Float[ndarray, "nViews nJoints 3"],
     projection_matrices: Float[ndarray, "nViews 3 4"],
@@ -103,9 +158,7 @@ def batch_triangulate(
     v: Float[ndarray, "nJoints nViews 1"] = rearrange(filtered_keypoints[..., 1], "c j -> j c 1")
     vP2: Float[ndarray, "nJoints nViews 4"] = v * P2
 
-    confidences: Float[ndarray, "nJoints nViews 1"] = rearrange(
-        filtered_keypoints[..., 2], "c j -> j c 1"
-    )
+    confidences: Float[ndarray, "nJoints nViews 1"] = rearrange(filtered_keypoints[..., 2], "c j -> j c 1")
 
     Au: Float[ndarray, "nJoints nViews 4"] = confidences * (uP2 - P0)
     Av: Float[ndarray, "nJoints nViews 4"] = confidences * (vP2 - P1)
@@ -199,11 +252,6 @@ def open_captures(cfg) -> dict[str, cv2.VideoCapture]:
     }
 
 
-def create_clients(cfg: MyConfig) -> dict[str, Client]:
-    c = Client(cfg.host, cfg.port)
-    return {"low": c, "side": Client(cfg.host, 8004), "over": c}
-
-
 def grab_keypoints_once(
     caps: dict[str, cv2.VideoCapture],
     clients: dict[str, Client],
@@ -254,9 +302,7 @@ def grab_keypoints_once(
             outs[name] = out
 
         else:
-            out["xyc"] = np.concatenate(
-                [out["xy"][0], np.expand_dims(out["conf"][0], axis=-1)], axis=-1
-            )
+            out["xyc"] = np.concatenate([out["xy"][0], np.expand_dims(out["conf"][0], axis=-1)], axis=-1)
             outs[name] = out
 
         kp_per_view.append(out["xyc"])
@@ -268,66 +314,25 @@ def grab_keypoints_once(
 
 @dataclass
 class MyConfig(Config):
-    colmap_path: Path  # map to colmap dir ie: .../sparse/0
-    urdf_path: Path  # path to robot urdf
+    urdf: Path  # path to robot urdf
     thresh: float = 0.5  # min confidence to keep 3d point
 
     def __post_init__(self):
-        self.colmap_path = self.colmap_path.expanduser().resolve()
-        self.urdf_path = self.urdf_path.expanduser().resolve()
-
-
-def log_fustrum(cameras: dict[str, PinholeParameters], root: Path):
-    for cam in cameras.values():
-        # path = Path(cam.name)
-        name = f"{cam.name}"
-        # COLMAP's camera transform is "camera from world"
-
-        from scipy.spatial.transform import Rotation as R
-
-        quat_xyzw = R.from_matrix(cam.extrinsics.cam_R_world).as_quat()  # xyzw
-        # quat_xyzw = image.qvec[[1, 2, 3, 0]].astype(np.float32)  # COLMAP uses wxyz quaternions
-        t = cam.extrinsics.cam_t_world  # / 100
-
-        rr.log(
-            f"{root / 'cam' / name}",
-            rr.Transform3D(
-                translation=t,
-                quaternion=quat_xyzw,
-                relation=rr.TransformRelation.ChildFromParent,
-            ),
-            static=True,
-        )
-        rr.log(name, rr.ViewCoordinates.RDF, static=True)  # X=Right, Y=Down, Z=Forward
-
-        # camera = cameras[image.camera_id]
-        # camera = convert_simple_radial_to_pinhole(camera)
-        # assert camera.model == "PINHOLE"
-        rr.log(
-            f"{root / 'cam' / name}",
-            rr.Pinhole(
-                resolution=[cam.intrinsics.width, cam.intrinsics.height],
-                focal_length=cam.intrinsics.f,
-                principal_point=cam.intrinsics.c,
-            ),
-        )
-
-        # bgr = cv2.imread(str(root / image.name))
-        # rr.log("camera/image/keypoints", rr.Points2D(visible_xys, colors=[34, 138, 167]))
+        self.urdf = self.urdf.expanduser().resolve()
 
 
 def main(cfg: MyConfig) -> None:
     # Load COLMAP ; build P matx
-    reconstruction = pycolmap.Reconstruction(str(cfg.colmap_path))
+    # reconstruction = pycolmap.Reconstruction(str(cfg.colmap_path))
+    # points3dbin = read.read_points3D_binary(cfg.colmap_path / "points3D.bin")
+    # pcolor = [p.rgb for p in points3dbin.values()]
 
-    points3dbin = read.read_points3D_binary(cfg.colmap_path / "points3D.bin")
-    pcolor = [p.rgb for p in points3dbin.values()]
-
-    points3dbin = {id: point for id, point in points3dbin.items() if np.linalg.norm(point.xyz) < 25}
+    # points3dbin = {id: point for id, point in points3dbin.items() if np.linalg.norm(point.xyz) < 25}
 
     view_order = ["low", "side", "over"]
     # view_order = ["side", "over"]
     cameras = {}
+    """
     P_list = []
     for name in view_order:
         info = projection_matrix_from_image(reconstruction, name)
@@ -347,45 +352,73 @@ def main(cfg: MyConfig) -> None:
         cameras[name] = camera
 
         P_list.append(P_3x4)
-
     projection_matrices = np.stack(P_list, axis=0)  # [3, 3, 4]
+    """
 
     caps = open_captures(cfg)
+
+    h, w = 480, 640
+    cx, cy = w / 2, h / 2
+    fx, fy = 515.0, 515.0
+
+    intr = np.array([[fx, 0.0, cx], [0.0, fy, cy], [0.0, 0.0, 1.0]])
+    np.eye(4)[:3, :]  # dummy
+
+    def load_extr(name: str):
+        p = Path("data/cam") / name / "HT.npz"
+        x = np.load(p)
+        x = {k: x[k] for k in x}["HT"]
+        x = xctf.RDF2FLU @ np.linalg.inv(x)
+        return x
+
+    cameras = {
+        k: {
+            "intrinsics": intr,
+            "extrinsics": load_extr(k),
+            "height": h,
+            "width": w,
+        }
+        for k in view_order
+    }
+
     print(cameras)
     print(caps)
+    P = {k: cameras[k]["intrinsics"] @ cameras[k]["extrinsics"][:3, :] for k in view_order}
 
     rr.init("triangulate", spawn=True)
-    blueprint.init(list(cameras.values()))
+    blueprint.init_blueprint(list(caps.keys()))
     rr.log("/", rr.ViewCoordinates.FLU, static=True)
 
+    """
     for name, cam in cameras.items():
         log_pinhole(
             cam,
             Path("world") / name,
         )
+    """
 
     root = Path("world")
+    print(cameras)
     log_fustrum(cameras, root)
-    clients = create_clients(cfg)
+    client = Client(cfg.host, cfg.port)
 
-    print(projection_matrices)
     print(caps)
-    print(clients)
 
-    to_robot = -np.array([4.5, 6.7, 10.3])  # adjust to your robot base
-    to_robot_mat = np.eye(4)
-    to_robot_mat[:3, 3] = to_robot
-    FLU2RDF = FLU2RDF @ to_robot_mat
+    # to_robot = -np.array([4.5, 6.7, 10.3])  # adjust to your robot base
+    # to_robot_mat = np.eye(4)
+    # to_robot_mat[:3, 3] = to_robot
+    # FLU2RDF = xctf.FLU2RDF @ to_robot_mat
 
-    rr.log(
-        "/world",
-        rr.Transform3D(
-            translation=FLU2RDF[:3, 3],
-            mat3x3=FLU2RDF[:3, :3],
-        ),
-        static=True,
-    )
+    # rr.log(
+    # "/world",
+    # rr.Transform3D(
+    # translation=xctf.FLU2RDF[:3, 3],
+    # mat3x3=xctf.FLU2RDF[:3, :3],
+    # ),
+    # static=True,
+    # )
 
+    """
     rr.log(
         "/world/scene/points",
         rr.Points3D(
@@ -396,8 +429,103 @@ def main(cfg: MyConfig) -> None:
         ),
         static=True,
     )
+    """
 
-    ez_load_urdf(cfg.urdf_path)
+    ez_load_urdf(cfg.urdf)
+
+    def perspective_transform(p, p3d):
+        """P: [3,4], p3d: [nPoints, 3]
+        h denotes homogeneous coordinates
+        """
+        print(p.shape, p3d.shape)
+        nPoints = p3d.shape[0]
+        p3dh = np.hstack([p3d, np.ones((nPoints, 1))])  # [nPoints, 4]
+        p2dh = (p @ p3dh.T).T  # [nPoints, 3]
+        p2d = p2dh[:, :2] / p2dh[:, 2:3]
+        return p2d
+
+    while True:
+        frames = {k: cap.read() for k, cap in caps.items()}
+        frames = {k: f[1] for k, f in frames.items() if f[0]}
+        outs = {k: client.step({"image": f}) for k, f in frames.items()}
+
+        from xclients.core.cfg import spec
+
+        print(spec(outs))
+        k2ds = {k: v.get("wilor_preds", {}).get("pred_keypoints_2d") for k, v in outs.items()}
+
+        # k2ds = {k: v.get('wilor_preds',{}).get('pred_vertices') for k,v in outs.items()}
+        # k2ds = {k: None if v is None  else  v[0]+outs[k]['wilor_preds']['pred_cam'] for k,v in k2ds.items()}
+        # k2ds = {k: None if v is None  else perspective_transform(P[k], v.reshape(-1,3)) for k,v in k2ds.items()}
+
+        # print(k2ds)
+
+        for k, f in frames.items():
+            rr.log(
+                f"world/cam/{k}/image",
+                rr.Image(f, color_model="BGR").compress(jpeg_quality=75),
+                static=False,
+            )
+
+            k2d = k2ds[k]
+            if k2d is None:
+                continue
+            rr.log(
+                f"world/cam/{k}/kp2d",
+                rr.Points2D(
+                    k2d,
+                    colors=np.tile(np.array([[1.0, 0.0, 0.0]]), (k2d.shape[0], 1)),
+                    radii=np.ones((k2d.shape[0], 1)) * 3,
+                ),
+            )
+
+        if sum([p is not None for p in k2ds.values()]) >= 2:
+            p = np.stack([P[k] for k in caps if k2ds[k] is not None], axis=0)
+            k2ds = np.array([k2ds[k] for k in caps if k2ds[k] is not None]).reshape(len(p), -1, 2)
+            # 100% confidence
+            k2ds = np.concatenate([k2ds, np.ones((*k2ds.shape[:-1], 1))], axis=-1)
+            print(p.shape, k2ds.shape)
+
+            k3ds = batch_triangulate(k2ds, p, min_views=2)
+            # print(k3ds)
+
+            rr.log(
+                "world/kp3d",
+                rr.Points3D(
+                    k3ds[:, :3],
+                    colors=np.tile(np.array([[1.0, 0.0, 0.0]]), (k3ds.shape[0], 1)),
+                    # labels=labels,
+                    radii=np.ones(k3ds.shape[0]) * 0.0025,
+                ),
+            )
+
+            # segments are [a,b], [b,c], ... from kp3d for points in mano joint order
+            segments = [[mano_joint_pairs[i][0], mano_joint_pairs[i][1]] for i in range(len(mano_joint_pairs))]
+            segments = k3ds[..., :3][segments]  # [nSegments, 2, 3]
+            colors_ls = []
+            for i in range(len(mano_joint_pairs)):
+                j1, j2 = mano_joint_pairs[i]
+                if j1 == 0:
+                    colors_ls.append(colors["Wrist"])
+                elif j2 % 4 == 0:
+                    colors_ls.append(colors["MCP_PIP"])
+                elif j2 % 4 == 3:
+                    colors_ls.append(colors["DIP_Tip"])
+                else:
+                    colors_ls.append(colors["PIP_DIP"])
+
+            colors_ls = np.array(colors_ls)
+
+            print(segments.shape)
+            print(colors_ls.shape)
+            # segments = segments.reshape(-1, 3)  # flatten to line strip
+            rr.log(  # the lines
+                "world/lp3d",
+                rr.LineStrips3D(
+                    segments,
+                    colors=np.array(colors_ls),
+                ),
+            )
 
     # VIS = O3DPointStepper()
     while True:
@@ -462,6 +590,7 @@ def main(cfg: MyConfig) -> None:
             ret, frame = cap.read()
             if not ret:
                 continue
+
             rr.log(
                 f"world/cam/{cam.name}/image",
                 rr.Image(frame, color_model="BGR").compress(jpeg_quality=75),

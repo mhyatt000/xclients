@@ -1,19 +1,6 @@
 [build-system]
-requires = ["hatchling>=1.26", 'torch']
-build-backend = "hatchling.build"
-# [tool.hatch.build.targets.wheel]
-
-# Do NOT put shared runtime deps here unless they’re truly compatible across projects.
-
-[tool.uv.workspace]
-members = [
-  # "core",
-  # "plugins/hamer",
-  # "plugins/server_camera",
-  # "plugins/server_da3",
-  # "plugins/server_sam3do",
-]
-
+requires = ["uv_build>=0.9.15"]
+build-backend = "uv_build"
 
 [project]
 name = "xclients"
@@ -22,30 +9,39 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "numpy",
-    "pydantic>=2.11.10",
+    "av>=16.0.1",
+    "einops>=0.8.1",
+    "jaxtyping>=0.3.3",
+    "numpy>=2.3.5",
+    "opencv-python>=4.11.0.86",
+    "pillow>=12.0.0",
+    "pydantic>=2.12.4",
+    "rerun-sdk>=0.27.2",
     "rich>=14.2.0",
+    "trimesh>=4.10.0",
     "tyro>=0.9.35",
     "webpolicy",
+    "xarm-python-sdk>=1.17.3",
+    "yourdfpy>=0.0.58",
 ]
 
 [tool.uv.sources]
-# xclients = { workspace = true }
 webpolicy = { git = "https://github.com/mhyatt000/webpolicy" }
+xarm-python-sdk = { git = "https://github.com/xArm-Developer/xArm-Python-SDK" }
 
-[project.scripts]
-yourpkg = "yourpkg.cli:main"   # if you expose a CLI
-da3 = "depth_anything_3.cli:app"
+# [project.scripts]
+# yourpkg = "yourpkg.cli:main"   # if you expose a CLI
+# da3 = "depth_anything_3.cli:app"
 
 [tool.pytest.ini_options]
 addopts = "-q"
 
-[tool.ruff]
-target-version = "py310"
-line-length = 100
-lint.extend-select = ["I", "UP", "B", "C4", "SIM", "PERF"]
-fix = true
-src = ["src", "tests"]
+# [tool.ruff]
+# target-version = "py310"
+# line-length = 100
+# lint.extend-select = ["I", "UP", "B", "C4", "SIM", "PERF"]
+# fix = true
+# src = ["src", "tests"]
 
 [tool.pyright]
 include = ["src", "tests"]
@@ -54,13 +50,3 @@ reportMissingTypeStubs = false
 [tool.coverage.run]
 source = ["yourpkg"]
 branch = true
-
-[tool.uv]
-conflicts = [
-    [
-      { package = "server-hamer"},
-      { package = "server-da3"},
-      { package = "server-camera"},
-      { package = "server-sam3do"},
-    ],
-]

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pathlib import Path
 
 import numpy as np
@@ -5,7 +7,7 @@ import rerun as rr
 from scipy.spatial.transform import Rotation as R
 
 
-def log_fustrum(cameras: dict[np.array], root: Path):
+def log_fustrum(cameras: dict[np.array], root: Path, inv: bool = False):
     for k, cam in cameras.items():
         name = f"{k}"
         print(name)
@@ -21,7 +23,7 @@ def log_fustrum(cameras: dict[np.array], root: Path):
             rr.Transform3D(
                 translation=t,
                 quaternion=quat_xyzw,
-                relation=rr.TransformRelation.ChildFromParent,
+                relation=rr.TransformRelation.ChildFromParent if not inv else rr.TransformRelation.ParentFromChild,
             ),
             static=True,
         )

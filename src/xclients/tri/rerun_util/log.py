@@ -1,22 +1,25 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from fractions import Fraction
 import hashlib
 import io
 import json
 import os
+from pathlib import Path
 import shutil
 import sys
-from dataclasses import dataclass, field
-from fractions import Fraction
-from pathlib import Path
 from typing import Any
 from uuid import UUID
 
 import av
-import rerun as rr
 from jaxtyping import Int
 from numpy import ndarray
-from pyarrow import ChunkedArray
+from pyarrow import ChunkedArray  # TODO remove?
+import rerun as rr
 from rerun_bindings import Recording, RecordingView
-from server_tri.camera_parameters import PinholeParameters  # Fisheye62Parameters,
+
+from xclients.tri.camera_parameters import PinholeParameters  # Fisheye62Parameters,
 
 
 def _default_cache_root() -> Path:
@@ -213,7 +216,7 @@ def log_video(
     timeline: str = "video_time",
     *,
     recording: rr.RecordingStream | None = None,
-) -> Int[ndarray, "num_frames"]:
+) -> Int[ndarray, num_frames]:
     """
     Logs a video asset and its frame timestamps.
 
@@ -241,9 +244,7 @@ def log_video(
     return frame_timestamps_ns
 
 
-def read_h264_samples_from_rrd(
-    rrd_path: str, video_entity: str, timeline: str
-) -> tuple[ChunkedArray, ChunkedArray]:
+def read_h264_samples_from_rrd(rrd_path: str, video_entity: str, timeline: str) -> tuple[ChunkedArray, ChunkedArray]:
     """Load recording data and query video stream."""
 
     recording: Recording = rr.dataframe.load_recording(rrd_path)
@@ -255,9 +256,7 @@ def read_h264_samples_from_rrd(
     codec = view.select(f"{normalized_entity}:VideoStream:codec")
     first_codec_batch = codec.read_next_batch()
     if first_codec_batch is None:
-        raise ValueError(
-            f"There's no video stream codec specified at {video_entity} for timeline {timeline}."
-        )
+        raise ValueError(f"There's no video stream codec specified at {video_entity} for timeline {timeline}.")
     codec_value = first_codec_batch.column(0)[0][0].as_py()
     if codec_value != rr.VideoCodec.H264.value:
         raise ValueError(
@@ -268,9 +267,7 @@ def read_h264_samples_from_rrd(
         print(f"Video stream codec is H.264 at {video_entity} for timeline {timeline}.")
 
     # Get the video stream
-    timestamps_and_samples = view.select(
-        timeline, f"{normalized_entity}:VideoStream:sample"
-    ).read_all()
+    timestamps_and_samples = view.select(timeline, f"{normalized_entity}:VideoStream:sample").read_all()
     times = timestamps_and_samples[0]
     samples = timestamps_and_samples[1]
 
@@ -312,11 +309,7 @@ def write_asset_video_blob(
             if value is None:
                 continue
             data_list = value.as_py()
-            if (
-                isinstance(data_list, list)
-                and len(data_list) == 1
-                and isinstance(data_list[0], list)
-            ):
+            if isinstance(data_list, list) and len(data_list) == 1 and isinstance(data_list[0], list):
                 data_list = data_list[0]
             video_bytes = bytes(data_list)
             output_path.write_bytes(video_bytes)
@@ -335,9 +328,7 @@ def mux_h264_to_mp4(times: ChunkedArray, samples: ChunkedArray, output_path: str
     sample_bytes = io.BytesIO(sample_bytes.buffers()[1])
 
     # Setup samples as input container.
-    input_container = av.open(
-        sample_bytes, mode="r", format="h264"
-    )  # Input is AnnexB H.264 stream.
+    input_container = av.open(sample_bytes, mode="r", format="h264")  # Input is AnnexB H.264 stream.
     input_stream = input_container.streams.video[0]
 
     # Setup output container.
@@ -350,9 +341,7 @@ def mux_h264_to_mp4(times: ChunkedArray, samples: ChunkedArray, output_path: str
 
     # Demux and mux packets.
     for packet, time in zip(input_container.demux(input_stream), times, strict=False):
-        packet.time_base = Fraction(
-            1, 1_000_000_000
-        )  # Assuming duration timestamps in nanoseconds.
+        packet.time_base = Fraction(1, 1_000_000_000)  # Assuming duration timestamps in nanoseconds.
         packet.pts = int(time.value - start_time.value)
         packet.dts = packet.pts  # dts == pts since there's no B-frames.
         packet.stream = output_stream
