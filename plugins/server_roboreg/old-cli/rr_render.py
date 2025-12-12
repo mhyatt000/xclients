@@ -1,14 +1,16 @@
+from __future__ import annotations
+
 import argparse
 import os
 import pathlib
 
 import cv2
 import numpy as np
-import torch
 from rich import progress
 from roboreg.io import MonocularDataset
 from roboreg.util import overlay_mask
 from roboreg.util.factories import create_robot_scene, create_virtual_camera
+import torch
 from torch.utils.data import DataLoader
 
 
@@ -20,9 +22,7 @@ def args_factory() -> argparse.Namespace:
         default=1,
         help="Batch size for rendering. For batch_size > 1, the last batch may be dropped.",
     )
-    parser.add_argument(
-        "--num-workers", type=int, default=0, help="Number of workers for data loading."
-    )
+    parser.add_argument("--num-workers", type=int, default=0, help="Number of workers for data loading.")
     parser.add_argument(
         "--ros-package",
         type=str,
@@ -65,9 +65,7 @@ def args_factory() -> argparse.Namespace:
         help="Homogeneous transform from base to camera frame, <path_to>/HT_hydra_robust.npy.",
     )
     parser.add_argument("--images-path", type=str, required=True, help="Path to the images.")
-    parser.add_argument(
-        "--joint-states-path", type=str, required=True, help="Path to the joint states."
-    )
+    parser.add_argument("--joint-states-path", type=str, required=True, help="Path to the joint states.")
     parser.add_argument(
         "--image-pattern",
         type=str,

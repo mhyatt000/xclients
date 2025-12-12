@@ -1,18 +1,20 @@
+from __future__ import annotations
+
 import argparse
+from enum import Enum
 import importlib
 import os
-from enum import Enum
 
 import cv2
 import numpy as np
 import pytorch_kinematics as pk
 import rich
 import rich.progress
-import torch
 from roboreg.io import find_files, parse_stereo_data
 from roboreg.losses import soft_dice_loss
 from roboreg.util import mask_distance_transform, mask_exponential_decay, overlay_mask
 from roboreg.util.factories import create_robot_scene, create_virtual_camera
+import torch
 
 
 class REGISTRATION_MODE(Enum):
@@ -200,12 +202,8 @@ def main() -> None:
         right_targets = [mask_exponential_decay(mask) for mask in right_masks]
     else:
         raise ValueError("Invalid registration mode.")
-    left_targets = torch.tensor(
-        np.array(left_targets), dtype=torch.float32, device=device
-    ).unsqueeze(-1)
-    right_targets = torch.tensor(
-        np.array(right_targets), dtype=torch.float32, device=device
-    ).unsqueeze(-1)
+    left_targets = torch.tensor(np.array(left_targets), dtype=torch.float32, device=device).unsqueeze(-1)
+    right_targets = torch.tensor(np.array(right_targets), dtype=torch.float32, device=device).unsqueeze(-1)
 
     # instantiate:
     #   - left camera with default identity extrinsics because we optimize for robot pose instead
@@ -235,20 +233,14 @@ def main() -> None:
     )
 
     # load extrinscis estimate......
-    left_extrinsics = torch.tensor(
-        np.load(args.left_extrinsics_file), dtype=torch.float32, device=device
-    )
+    left_extrinsics = torch.tensor(np.load(args.left_extrinsics_file), dtype=torch.float32, device=device)
     left_extrinsics_inv = torch.linalg.inv(left_extrinsics)
 
     # enable gradient tracking and instantiate optimizer
     left_extrinsics_9d_inv = pk.matrix44_to_se3_9d(left_extrinsics_inv)
     left_extrinsics_9d_inv.requires_grad = True
-    optimizer = getattr(importlib.import_module("torch.optim"), args.optimizer)(
-        [left_extrinsics_9d_inv], lr=args.lr
-    )
-    scheduler = torch.optim.lr_scheduler.StepLR(
-        optimizer, step_size=args.step_size, gamma=args.gamma
-    )
+    optimizer = getattr(importlib.import_module("torch.optim"), args.optimizer)([left_extrinsics_9d_inv], lr=args.lr)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=args.step_size, gamma=args.gamma)
     best_left_extrinsics = left_extrinsics
     best_left_extrinsics_inv = left_extrinsics_inv
     best_loss = float("inf")
@@ -265,9 +257,9 @@ def main() -> None:
             "right": scene.observe_from("right"),
         }
         if mode == REGISTRATION_MODE.DISTANCE_FUNCTION:
-            loss = torch.nn.functional.mse_loss(
-                left_targets, renders["left"]
-            ) + torch.nn.functional.mse_loss(right_targets, renders["right"])
+            loss = torch.nn.functional.mse_loss(left_targets, renders["left"]) + torch.nn.functional.mse_loss(
+                right_targets, renders["right"]
+            )
         elif mode == REGISTRATION_MODE.SEGMENTATION:
             loss = (
                 soft_dice_loss(left_targets, renders["left"]).mean()
@@ -373,17 +365,11 @@ def main() -> None:
             "right": scene.observe_from("right"),
         }
 
-    for i, (left_render, right_render) in enumerate(
-        zip(renders["left"], renders["right"], strict=False)
-    ):
+    for i, (left_render, right_render) in enumerate(zip(renders["left"], renders["right"], strict=False)):
         left_render = left_render.squeeze().cpu().numpy()
         right_render = right_render.squeeze().cpu().numpy()
-        left_overlay = overlay_mask(
-            left_images[i], (left_render * 255.0).astype(np.uint8), scale=1.0
-        )
-        right_overlay = overlay_mask(
-            right_images[i], (right_render * 255.0).astype(np.uint8), scale=1.0
-        )
+        left_overlay = overlay_mask(left_images[i], (left_render * 255.0).astype(np.uint8), scale=1.0)
+        right_overlay = overlay_mask(right_images[i], (right_render * 255.0).astype(np.uint8), scale=1.0)
         left_difference = np.abs(left_render - left_masks[i].astype(np.float32) / 255.0)
         right_difference = np.abs(right_render - right_masks[i].astype(np.float32) / 255.0)
 
@@ -404,8 +390,7 @@ def main() -> None:
     )
     np.save(
         os.path.join(args.path, args.right_output_file),
-        best_left_extrinsics.cpu().numpy()
-        @ scene.cameras["right"].extrinsics.detach().cpu().numpy(),
+        best_left_extrinsics.cpu().numpy() @ scene.cameras["right"].extrinsics.detach().cpu().numpy(),
     )
 
 

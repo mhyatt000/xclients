@@ -1,9 +1,10 @@
+from __future__ import annotations
+
 import argparse
 import os
 
 import cv2
 import numpy as np
-import torch
 from roboreg import differentiable as rrd
 from roboreg.io import find_files, parse_camera_info, parse_mono_data
 from roboreg.losses import soft_dice_loss
@@ -14,6 +15,7 @@ from roboreg.util import (
     overlay_mask,
     random_fov_eye_space_coordinates,
 )
+import torch
 
 
 def args_factory() -> argparse.Namespace:
@@ -253,9 +255,7 @@ def main() -> None:
     height = int(height * args.scale)
     width = int(width * args.scale)
     intrinsics = intrinsics * args.scale
-    masks = torch.nn.functional.interpolate(
-        masks.unsqueeze(1), size=(height, width), mode="nearest"
-    ).squeeze(1)
+    masks = torch.nn.functional.interpolate(masks.unsqueeze(1), size=(height, width), mode="nearest").squeeze(1)
 
     # prepare particles
     particles = instantiate_particles(
@@ -277,9 +277,7 @@ def main() -> None:
     )
 
     # instantiate scene for fitness evaluation
-    batch_size = (
-        n_joint_states * args.n_cameras
-    )  # (each camera observes n_joint_states joint states)
+    batch_size = n_joint_states * args.n_cameras  # (each camera observes n_joint_states joint states)
     camera_name = "camera"
     camera = rrd.VirtualCamera(
         resolution=(height, width),
@@ -322,21 +320,17 @@ def main() -> None:
         scene.cameras["camera"].extrinsics = extrinsics.repeat_interleave(n_joint_states, 0)
         renders = scene.observe_from("camera").squeeze()
         fitness = (
-            soft_dice_loss(renders.unsqueeze(-1), masks.unsqueeze(-1))
-            .view(args.n_cameras, n_joint_states)
-            .mean(dim=1)
+            soft_dice_loss(renders.unsqueeze(-1), masks.unsqueeze(-1)).view(args.n_cameras, n_joint_states).mean(dim=1)
         )
         # show the best particle of the current iteration
         if args.display_progress:
             offset = 0
             current_best_idx = torch.argmin(fitness)
-            current_best_render = (
-                renders[current_best_idx * n_joint_states + offset].cpu().numpy() * 255.0
-            ).astype(np.uint8)
-            # upscale render
-            current_best_render = cv2.resize(
-                current_best_render, (images[offset].shape[1], images[offset].shape[0])
+            current_best_render = (renders[current_best_idx * n_joint_states + offset].cpu().numpy() * 255.0).astype(
+                np.uint8
             )
+            # upscale render
+            current_best_render = cv2.resize(current_best_render, (images[offset].shape[1], images[offset].shape[0]))
             overlay = overlay_mask(
                 images[offset],
                 current_best_render,

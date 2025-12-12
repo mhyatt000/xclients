@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import argparse
 import os
 import pathlib
@@ -15,12 +17,8 @@ def args_factory() -> argparse.Namespace:
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--path", type=str, required=True, help="Path to the images.")
     parser.add_argument("--pattern", type=str, default="image_*.png", help="Image file pattern.")
-    parser.add_argument(
-        "--n-positive-samples", type=int, default=5, help="Number of positive samples."
-    )
-    parser.add_argument(
-        "--n-negative-samples", type=int, default=5, help="Number of negative samples."
-    )
+    parser.add_argument("--n-positive-samples", type=int, default=5, help="Number of positive samples.")
+    parser.add_argument("--n-negative-samples", type=int, default=5, help="Number of negative samples.")
     parser.add_argument(
         "--model-id",
         type=str,
@@ -62,9 +60,7 @@ def main():
         annotations = False
         if args.pre_annotated:
             try:
-                samples, labels = detector.read(
-                    path=os.path.join(path.absolute(), f"{image_stem}_samples.csv")
-                )
+                samples, labels = detector.read(path=os.path.join(path.absolute(), f"{image_stem}_samples.csv"))
                 annotations = True
             except FileNotFoundError:
                 pass
@@ -81,9 +77,7 @@ def main():
         overlay = overlay_mask(img, mask, mode="g", scale=1.0)
 
         # write probability and mask
-        probability_path = os.path.join(
-            path.absolute(), f"probability_sam2_{image_stem + image_suffix}"
-        )
+        probability_path = os.path.join(path.absolute(), f"probability_sam2_{image_stem + image_suffix}")
         mask_path = os.path.join(path.absolute(), f"mask_sam2_{image_stem + image_suffix}")
         overlay_path = os.path.join(path.absolute(), f"overlay_sam2_{image_stem + image_suffix}")
         cv2.imwrite(probability_path, (probability * 255.0).astype(np.uint8))
