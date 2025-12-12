@@ -35,10 +35,10 @@ class Renderer:
         self,
         cfg: HydraConfig,
         rcfg: RendererConfig,
-        intr: np.ndarray,
-        extr: np.ndarray,
         height: int,
         width: int,
+        intr: np.ndarray,
+        extr: np.ndarray | None = None,
     ) -> None:
         self.cfg, self.rcfg = cfg, rcfg
 
@@ -49,8 +49,8 @@ class Renderer:
             "camera": VirtualCamera(
                 resolution=[height, width],
                 intrinsics=intr,
-                extrinsics=extr,
                 device=self.device,
+                **({"extrinsics": extr} if extr is not None else {}),
             )
         }
 
@@ -65,8 +65,10 @@ class Renderer:
             collision=cfg.collision_meshes,
         )
 
+        self.camera = camera
         self.color = rcfg.color
         self.camera_name = next(iter(self.scene.cameras.keys()))
+        self.name = self.camera_name
 
     @staticmethod
     def _ensure_batch(data: np.ndarray | torch.Tensor) -> np.ndarray:
@@ -77,6 +79,11 @@ class Renderer:
         if data.ndim == 3:
             data = np.expand_dims(data, axis=0)
         return data
+
+    def observe(self) -> torch.Tensor:
+        """Render the current scene from the configured camera."""
+        renders = self.scene.observe_from(self.camera_name)
+        return renders
 
     def step(self, payload: dict) -> list[np.ndarray]:
         """

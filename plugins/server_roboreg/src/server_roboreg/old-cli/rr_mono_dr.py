@@ -67,25 +67,25 @@ def args_factory() -> argparse.Namespace:
     parser.add_argument(
         "--ros-package",
         type=str,
-        default="lbr_description",
+        default="xarm_description",
         help="Package where the URDF is located.",
     )
     parser.add_argument(
         "--xacro-path",
         type=str,
-        default="urdf/med7/med7.xacro",
+        default="urdf/xarm_device.urdf.xacro",
         help="Path to the xacro file, relative to --ros-package.",
     )
     parser.add_argument(
         "--root-link-name",
         type=str,
-        default="",
+        default="link_base",
         help="Root link name. If unspecified, the first link with mesh will be used, which may cause errors.",
     )
     parser.add_argument(
         "--end-link-name",
         type=str,
-        default="",
+        default="link7",
         help="End link name. If unspecified, the last link with mesh will be used, which may cause errors.",
     )
     parser.add_argument(

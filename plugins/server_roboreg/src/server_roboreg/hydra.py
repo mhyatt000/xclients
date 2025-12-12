@@ -18,7 +18,7 @@ from webpolicy.base_policy import BasePolicy
 from webpolicy.server import Server
 
 from server_roboreg.common import HydraConfig
-from server_roboreg.render import Renderer, RendererConfig
+from server_roboreg.dr import DR
 
 
 class Hydra(BasePolicy):
@@ -45,6 +45,8 @@ class Hydra(BasePolicy):
         self.root_link_name = root
         self.end_link_name = end
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
+
+        self.dr = DR(cfg.dr, cfg)
         self.r = None
 
     # --------------------------------------------------------
@@ -60,22 +62,26 @@ class Hydra(BasePolicy):
         }
         """
 
-        if not payload:
-            self.hist = []
+        if payload:
+            print(payload.keys())
+            # add incoming pose
+            self.hist.append(payload)
             return {}
 
-        print(payload.keys())
-
-        # add incoming pose
-        self.hist.append(payload)
-
-        # need >= 3 frames
-        if len(self.hist) < 3:
-            return {"hist": len(self.hist), "required": 3}
+        # else no new payload, run optimization; clear buffer
+        if not self.hist:
+            return {"hist": 0, "required": 3}
 
         # run optimization
         HT = self._run_hydra(self.hist)
+        payload = payload | {"HT": HT}
+        hist = jax.tree.map(lambda *x: np.stack(x), *self.hist)
+        hist["HT"] = HT
+        hist["intrinsics"] = hist["intrinsics"][0]
+        out = self.dr.step(hist)
+        self.hist = []
 
+        """
         if self.r is None:
             self.r = Renderer(
                 self.cfg,
@@ -85,10 +91,10 @@ class Hydra(BasePolicy):
                 height=payload["depth"].shape[0],
                 width=payload["depth"].shape[1],
             )
-        hist = jax.tree.map(lambda *x: np.stack(x), *self.hist)
         out = self.render(hist)
-
         out = out | {"HT": HT}
+        """
+
         print(jax.tree.map(lambda x: type(x), out))
         return out
 
