@@ -181,6 +181,7 @@ def main(cfg: PrepConfig):
 
     for p in tqdm(f):
         ep = Episode.from_npz(p)
+        _ep = []
 
         for s in tqdm(ep, leave=False):
             # print(spec(s))
@@ -205,10 +206,11 @@ def main(cfg: PrepConfig):
                 continue
 
             s = s | {"k3ds": k3ds}
-            print(spec(s))
-            yield s
-
-            print(spec(s["low"]))
+            # print(spec(s))
+            _ep.append(s)
+        _ep = jax.tree.map(lambda *x: np.stack(x, axis=0), *_ep)
+        print(spec(_ep))
+        yield _ep
 
 
 if __name__ == "__main__":
