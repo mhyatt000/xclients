@@ -5,7 +5,7 @@ from ultralytics import YOLO
 from wilor.models import load_wilor
 
 class AttrDict(dict):
-    """Dictionary that supports both dot notation and dict access."""
+    
     def __getattr__(self, item):
         try:
             return self[item]
@@ -17,7 +17,7 @@ class AttrDict(dict):
         return super().get(key, default)
 
 def real_cfg(cfg_path):
-    """Load WiLoR YAML config and convert to AttrDict-like structure."""
+ 
     with open(cfg_path, "r") as f:
         raw = yaml.safe_load(f)
 
