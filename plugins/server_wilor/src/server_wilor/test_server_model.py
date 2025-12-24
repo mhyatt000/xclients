@@ -2,7 +2,7 @@
 
 import cv2
 import os
-from .server import WilorModel
+from server import WilorModel
 
 TEST_IMAGE = "/data/home/lliao2/xclients/external/wilor/demo_img/test1.jpg"
 

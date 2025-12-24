@@ -10,16 +10,9 @@ from dataclasses import dataclass
 
 @dataclass
 class WilorConfig:
-    image: str = None
 
+    wilor_root:Path
 
-PLUGIN_DIR = Path(__file__).parent
-ROOT_DIR   = (PLUGIN_DIR / "../../../../").resolve()         
-WILOR_ROOT = (ROOT_DIR / "external/wilor").resolve()         
-sys.path.append(str(WILOR_ROOT))
-
-WEBPOLICY_SRC = (PLUGIN_DIR / "../../external/webpolicy/src").resolve()
-sys.path.append(str(WEBPOLICY_SRC))
 
 from webpolicy.base_policy import BasePolicy   
 
@@ -34,11 +27,14 @@ LIGHT_PURPLE=(0.25098039,  0.274117647,  0.65882353)
 class WilorModel(BasePolicy):
     def __init__(self):
         print(" Initializing WiLoR server...")
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cpu")
+        #self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        ckpt = WILOR_ROOT / "pretrained_models" / "wilor_final.ckpt"
-        cfg  = WILOR_ROOT / "pretrained_models" / "model_config.yaml"
-        det  = WILOR_ROOT / "pretrained_models" / "detector.pt"
+        wilor_root = Path(os.environ["WILOR_ROOT"])
+
+        ckpt = wilor_root / "pretrained_models" / "wilor_final.ckpt"
+        cfg  = wilor_root / "pretrained_models" / "model_config.yaml"
+        det  = wilor_root / "pretrained_models" / "detector.pt"
 
         self.model = RealWiLoR(ckpt, cfg, self.device)
         self.cfg = real_cfg(cfg)
@@ -49,88 +45,67 @@ class WilorModel(BasePolicy):
             
         )
 
-
-
-    def render_result(self, image_rgb, preds, batch):
-        
+    def render_result(self, image_rgb, preds):
         if preds is None or preds["pred_vertices"].shape[0] == 0:
             return image_rgb
 
-        cam_crop = preds["pred_cam_t"]            # (B, 3) 
-        verts_t  = preds["pred_vertices"]         # (B, V, 3)
+        verts = preds["pred_vertices"][0]   
+        cam_t = preds["pred_cam_t"][0]       
+        is_right = preds["pred_right"][0]
+        focal = preds["focal_length"][0]
 
-#       batch geometry 
-        box_center = batch["box_center"]
-        box_size   = batch["box_size"]
-        img_size   = batch["img_size"]
+        if isinstance(focal, torch.Tensor):
+            focal = focal.detach().cpu().numpy()
+        focal_length = float(np.max(focal))
 
-#       align device here, render mixes torch + numpy(avoid mismatch)
-        device = cam_crop.device
-        box_center = box_center.to(device)
-        box_size   = box_size.to(device)
-        img_size   = img_size.to(device)
-
-        cam_t = cam_crop_to_full(
-            cam_crop,
-            box_center,
-            box_size,
-            img_size,
-        )       
-
-#       take 1 hand and reverse to gets another
-        verts = verts_t[0].detach().cpu().numpy() 
-        cam_t = cam_t[0].detach().cpu().numpy()    
-
-        is_right = batch["right"][0].item()
-        verts[:, 0] *= (2 * is_right - 1)
-
-        joints = preds.get("pred_keypoints_3d", None)
-        if joints is not None:
-            joints = joints[0].detach().cpu().numpy()
-            joints[:, 0] *= (2 * is_right - 1)
-
- #      render (numpy only)
         H, W = image_rgb.shape[:2]
 
-        rgba = self.renderer.render_rgba(
-            verts,
-            cam_t=cam_t,
-            render_res=(H, W),
+        rgba = self.renderer.render_rgba_multiple(
+            [verts],
+            cam_t=[cam_t],
+            render_res=(W, H),
+            is_right=[is_right],
+            mesh_base_color=LIGHT_PURPLE,
+            scene_bg_color=(1, 1, 1),
+            focal_length=focal_length,
         )
 
-        rgb   = rgba[..., :3]
+        rgb = rgba[..., :3]
         alpha = rgba[..., 3:4]
 
-#       renderer may return (W, H), align to image shape
-        if rgb.shape[0] != image_rgb.shape[0] or rgb.shape[1] != image_rgb.shape[1]:
-            rgb   = np.transpose(rgb, (1, 0, 2))
-            alpha = np.transpose(alpha, (1, 0, 2))
-
         img_f = image_rgb.astype(np.float32) / 255.0
-        rgb_f = rgb.astype(np.float32)
-        if rgb_f.max() > 1.5:
-            rgb_f /= 255.0
 
-        overlay = img_f * (1.0 - alpha) + rgb_f * alpha
-#       demo is cv2, automatically convert the input to uint8 here
-        return (overlay * 255.0).clip(0, 255).astype(np.uint8) 
-
+        out = img_f * (1 - alpha) + rgb * alpha
+        return (out * 255).astype(np.uint8)
 
 
     def detect_hands(self, image):
         detections = self.detector(image)[0]
+
+        if len(detections) == 0:
+            return None, None
+
         boxes = []
         is_right = []
+
         for det in detections:
-            box = det.boxes.data.cpu().numpy().squeeze()[:4]
-            hand_type = int(det.boxes.cls.cpu().item())  # 0=left, 1=right
-            boxes.append(box)
-            is_right.append(hand_type)
-        return np.array(boxes), np.array(is_right)
+            boxes.append(det.boxes.data[..., :4])
+            is_right.append(det.boxes.cls.long())
+
+        boxes = torch.cat(boxes, dim=0)      
+        is_right = torch.cat(is_right, dim=0)  
+
+        return boxes, is_right
 
 
 
     def preprocess(self, image, boxes, is_right, rescale_factor):
+
+        if isinstance(boxes, torch.Tensor):
+            boxes = boxes.detach().cpu().numpy()
+        if isinstance(is_right, torch.Tensor):
+            is_right = is_right.detach().cpu().numpy()
+
         dataset = ViTDetDataset(
             self.cfg,
             image,
@@ -138,11 +113,12 @@ class WilorModel(BasePolicy):
             is_right,
             rescale_factor=rescale_factor
         )
+
         dataloader = torch.utils.data.DataLoader(
             dataset,
-            batch_size=16,
+            batch_size=1,
             shuffle=False,
-            num_workers=0
+            num_workers=0,
         )
         return dataloader
 
@@ -160,96 +136,83 @@ class WilorModel(BasePolicy):
 
 
     def postprocess(self, out, batch):
- 
-        multiplier = (2 * batch['right'] - 1).to(out['pred_cam'].device)
+        device = out['pred_cam'].device
 
+        multiplier = (2 * batch['right'] - 1).to(device)
         pred_cam = out['pred_cam']
-        pred_cam[:, 1] = multiplier * pred_cam[:, 1]
+        pred_cam[:, 1] *= multiplier
 
-        box_center = batch["box_center"].float().to(pred_cam.device)
-        box_size   = batch["box_size"].float().to(pred_cam.device)
-        img_size   = batch["img_size"].float().to(pred_cam.device)
+        box_center = batch["box_center"].float().to(device)
+        box_size   = batch["box_size"].float().to(device)
+        img_size   = batch["img_size"].float().to(device)
 
-        scaled_focal_length = (
+        focal_length = (
             self.cfg.EXTRA.FOCAL_LENGTH
             / self.cfg.MODEL.IMAGE_SIZE
             * img_size.max()
         )
 
-        pred_cam_t_full = cam_crop_to_full(
+        cam_t = cam_crop_to_full(
             pred_cam,
             box_center,
             box_size,
             img_size,
-            scaled_focal_length
-        ).detach().cpu().numpy()
+            focal_length
+        )  
 
-        all_verts = []
-        all_cam_t = []
-        all_right = []
+        verts = out['pred_vertices']
+        verts[..., 0] *= multiplier[:, None]
 
-        batch_size = batch["img"].shape[0]
-
-        for n in range(batch_size):
-            verts = out['pred_vertices'][n].detach().cpu().numpy()
-
-            is_right = batch['right'][n].cpu().numpy()
-            verts[:, 0] = (2 * is_right - 1) * verts[:, 0]
-
-            cam_t = pred_cam_t_full[n]
-
-            all_verts.append(verts)
-            all_cam_t.append(cam_t)
-            all_right.append(is_right)
-
-        return all_verts, all_cam_t, all_right
-
+        return {
+            "verts": verts,          
+            "cam_t": cam_t,          
+            "right": batch['right'], 
+            "focal_length": focal_length,  
+        }
 
 
     def step(self, payload: dict, render: bool = False):
         image = payload["image"]
+        H, W, _ = image.shape
+
+        boxes, is_right = self.detect_hands(image)
+        if boxes is None or len(boxes) == 0:
+            return {"boxes": [], "right": [], "overlay": None}
+
+        boxes = boxes.float()   
+        is_right = is_right.long()
 
         dataloader = self.preprocess(image, boxes, is_right, rescale_factor=2.0)
 
-        verts_list, cams_list, right_list = [], [], []
         rendered = None
+        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-        for batch in dataloader:
+        target_idx = 0  # 0 is left; 1 is right
+
+        for i, batch in enumerate(dataloader):
+            if i != target_idx:
+                continue
+
             out = self.infer(batch)
-            verts, cams, rights = self.postprocess(out, batch)
+            pp = self.postprocess(out, batch)
 
-            verts_list.extend(verts)
-            cams_list.extend(cams)
-            right_list.extend(rights)
-
-            #use for debug
             if render:
-                # render need RGB
-                image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                verts = pp["verts"][0].detach().cpu().numpy()
+                cam_t = pp["cam_t"][0].detach().cpu().numpy()
+                right = int(pp["right"][0].item())
+                focal = pp["focal_length"]
 
-                # render uses geometry info from batch
                 rendered = self.render_result(
                     image_rgb=image_rgb,
                     preds={
-                        "pred_vertices": out["pred_vertices"],
-                        "pred_cam_t": out["pred_cam_t"],
-                        "pred_keypoints_3d": out.get("pred_keypoints_3d", None),
-                        "pred_right": batch["right"],
+                        "pred_vertices": np.array([verts]),
+                        "pred_cam_t": np.array([cam_t]),
+                        "pred_right": np.array([right]),
+                        "focal_length": np.array([[focal, focal]]),
                     },
-                    batch=batch,
-                )           
+                )
+            break  
 
-        result = {
-            "status": "ok",
-            "verts": verts_list,
-            "cams": cams_list,
-            "right": right_list,
+        return {
+            "render": rendered,
         }
-
-        if render:
-            result["render"] = rendered
-
-        return result
-
-
-
