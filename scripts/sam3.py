@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 import tyro
-from common import Config, spec
+from xclients.core.cfg import Config, spec
 from rich import print
 from webpolicy.client import Client
 
