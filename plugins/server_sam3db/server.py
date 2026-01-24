@@ -7,11 +7,6 @@ from pathlib import Path
 
 from dataclasses import dataclass
 
-# @dataclass
-# class Sam3dbConfig:
-
-#     Sam3db_root:Path
-
 from webpolicy.base_policy import BasePolicy
 
 from sam_3d_body import load_sam_3d_body, SAM3DBodyEstimator
@@ -37,37 +32,51 @@ class Sam3dBodyPolicy(BasePolicy):
 
         sam3db_root=Path(os.environ["SAM3DB_ROOT"])
 
-# paths from env 环境路径
+        # paths from env 
         ckpt_path = sam3db_root / "checkpoints" / "sam3d_body.ckpt"
         mhr_path = sam3db_root / "assets" / "mhr"
         detector_path = sam3db_root / "pretrained_models" / "vitdet"
         segmentor_path = sam3db_root / "pretrained_models" / "sam2"
         fov_path = sam3db_root / "pretrained_models" / "moge2"
 
-        #load main model 加载模型，命令全部写死
+        #load main model 
         model, model_cfg = load_sam_3d_body(
             str(ckpt_path),
             device=self.device,
             mhr_path=str(mhr_path),
         )
-        
-        self.detector = HumanDetector(
-            name="vitdet", 
-            device=self.device, 
-            path=str(detector_path)
-        )
-        self.segmentor = HumanSegmentor(
-            name="sam2", 
-            device=self.device, 
-            path=str(segmentor_path)
-        )
-        self.fov_estimator = FOVEstimator(
-            name="moge2", 
-            device=self.device, 
-            path=str(fov_path)
-        )
-       
-        #  estimator 工具管家
+
+        try:
+            self.detector = HumanDetector(
+                name="vitdet",
+                device=self.device,
+                path=str(detector_path)
+            )
+        except Exception as e:
+            print("⚠️ ViTDet disabled:", e)
+            self.detector = None
+
+        try:
+            self.segmentor = HumanSegmentor(
+                name="sam2",
+                device=self.device,
+                path=str(segmentor_path)
+            )
+        except Exception as e:
+            print("⚠️ SAM2 disabled:", e)
+            self.segmentor = None
+
+        try:
+            self.fov_estimator = FOVEstimator(
+                name="moge2",
+                device=self.device,
+                path=str(fov_path)
+            )
+        except Exception as e:
+            print("⚠️ FOV disabled:", e)
+            self.fov_estimator = None       
+            
+        #  estimator 
         self.estimator = SAM3DBodyEstimator(
             sam_3d_body_model=model,
             model_cfg=model_cfg,
@@ -84,7 +93,6 @@ class Sam3dBodyPolicy(BasePolicy):
 
         image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-        # 简写了原来的infer 
         outputs = self.estimator.process_one_image(
             image,
             bbox_thr=0.8,
@@ -103,8 +111,8 @@ class Sam3dBodyPolicy(BasePolicy):
 
         return {
             "render": rendered_img 
-            #将来要输出3D数据吗？？！！问Matt！
-            #"3d_data": outputs 或者 细节一点比如 vertices、joints...
+            #QA: do we need 3d model's data?or just image?
+            #eg: "3d_data": outputs or more details: vertices、joints...
         }
 
 
