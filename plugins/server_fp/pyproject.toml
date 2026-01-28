@@ -15,28 +15,29 @@ dependencies = [
     "uvicorn",
     "typer",
     "webpolicy",
-
-    "ruamel.yaml",       
-    "hydra-core",        
-    "omegaconf",         
-    "h5py",              
-    "trimesh",           
-    "scipy",             
-    "pyrender",          
-    "matplotlib",        
-    "scikit-image",      
-    "tqdm",              
-    "transforms3d",      
-    "open3d",            
-    "imageio",           
-    "pyglet<2",          
+    "ruamel.yaml",
+    "hydra-core",
+    "omegaconf",
+    "h5py",
+    "trimesh",
+    "scipy",
+    "pyrender",
+    "matplotlib",
+    "scikit-image",
+    "tqdm",
+    "transforms3d",
+    "open3d",
+    "imageio",
+    "pyglet<2",
     "psutil",
     "torchvision",
     "transformations",
     "kornia",
     "ninja",
-    "pytorch3d @ git+https://github.com/facebookresearch/pytorch3d.git",
-    "nvdiffrast @ git+https://github.com/NVlabs/nvdiffrast.git"
+    "xclients",
+    "tyro>=1.0.5",
+    "pytorch3d",
+    "nvdiffrast",
 ]
 
 
@@ -46,6 +47,9 @@ package = false
 
 [tool.uv.sources]
 webpolicy = { git = "https://github.com/mhyatt000/webpolicy" }
+xclients = { path = "../../", editable = true }
+pytorch3d = { git = "https://github.com/facebookresearch/pytorch3d" }
+nvdiffrast = { git = "https://github.com/NVlabs/nvdiffrast.git" }
 
 [tool.uv.extra-build-dependencies]
 pytorch3d = ["torch"]
