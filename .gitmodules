@@ -7,3 +7,6 @@
 [submodule "external/roboreg"]
 	path = external/roboreg
 	url = https://github.com/lbr-stack/roboreg
+[submodule "external/sam3db"]
+	path = external/sam3db
+	url = https://github.com/facebookresearch/sam-3d-body
