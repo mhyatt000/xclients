@@ -1,45 +1,47 @@
+from __future__ import annotations
+
 import os
-import sys
-import torch
-import cv2
-import numpy as np
 from pathlib import Path
 
-from dataclasses import dataclass
-
+import cv2
+import numpy as np
+import pyrootutils
+from rich import print
+import torch
 from webpolicy.base_policy import BasePolicy
 
-from sam_3d_body import load_sam_3d_body, SAM3DBodyEstimator
-from tools.vis_utils import visualize_sample, visualize_sample_together
-from tqdm import tqdm
-from tools.build_detector import HumanDetector
-from tools.build_sam import HumanSegmentor
-from tools.build_fov_estimator import FOVEstimator
+# follow sam3db demo.py style
+demo = Path(__file__).parents[2] / "external/sam3db"
+root = pyrootutils.setup_root(
+    search_from=demo,
+    indicator=[".git", "pyproject.toml", ".sl"],
+    pythonpath=True,
+    dotenv=True,
+)
 
-@dataclass
-class Config:
-    host: str = "0.0.0.0"
-    port: int = 8080
+from sam_3d_body import load_sam_3d_body, SAM3DBodyEstimator
+from tools.build_detector import HumanDetector
+from tools.build_fov_estimator import FOVEstimator
+from tools.build_sam import HumanSegmentor
+from tools.vis_utils import visualize_sample_together
 
 
 class Sam3dBodyPolicy(BasePolicy):
     def __init__(self):
         print("Initializing SAM3D Body server...")
 
-        self.device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu"
-        )
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        sam3db_root=Path(os.environ["SAM3DB_ROOT"])
+        sam3db_root = Path(os.environ["SAM3DB_ROOT"])
 
-        # paths from env 
+        # paths from env
         ckpt_path = sam3db_root / "checkpoints" / "sam3d_body.ckpt"
         mhr_path = sam3db_root / "assets" / "mhr"
         detector_path = sam3db_root / "pretrained_models" / "vitdet"
         segmentor_path = sam3db_root / "pretrained_models" / "sam2"
         fov_path = sam3db_root / "pretrained_models" / "moge2"
 
-        #load main model 
+        # load main model
         model, model_cfg = load_sam_3d_body(
             str(ckpt_path),
             device=self.device,
@@ -55,7 +57,7 @@ class Sam3dBodyPolicy(BasePolicy):
             if detector_path.exists()
             else None
         )
-        
+
         self.segmentor = (
             HumanSegmentor(
                 name="sam2",
@@ -76,7 +78,7 @@ class Sam3dBodyPolicy(BasePolicy):
             else None
         )
 
-        #  estimator 
+        #  estimator
         self.estimator = SAM3DBodyEstimator(
             sam_3d_body_model=model,
             model_cfg=model_cfg,
@@ -103,22 +105,17 @@ class Sam3dBodyPolicy(BasePolicy):
         # print("num persons:", len(outputs))
 
         person = outputs[0]
-        
+
         rendered_img = None
         if render:
-            rendered_img = visualize_sample_together(
-                image, 
-                outputs, 
-                self.estimator.faces
-            )
+            rendered_img = visualize_sample_together(image, outputs, self.estimator.faces)
 
             rendered_img = rendered_img.astype(np.uint8)
 
-        mesh_3d={
+        mesh_3d = {
             "vertices": person["pred_vertices"],
-            "faces": self.faces,          
+            "faces": self.faces,
             "joints_3d": person["pred_keypoints_3d"],
-
             "camera": {
                 "translation": person["pred_cam_t"],
                 "focal_length": person["focal_length"],
@@ -126,8 +123,6 @@ class Sam3dBodyPolicy(BasePolicy):
         }
 
         return {
-            "render": rendered_img, 
+            "render": rendered_img,
             "mesh_3d": mesh_3d,
         }
-
-
