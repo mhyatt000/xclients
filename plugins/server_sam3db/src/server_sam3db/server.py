@@ -5,25 +5,18 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-import pyrootutils
 from rich import print
 import torch
 from webpolicy.base_policy import BasePolicy
 
-# follow sam3db demo.py style
-demo = Path(__file__).parents[2] / "external/sam3db"
-root = pyrootutils.setup_root(
-    search_from=demo,
-    indicator=[".git", "pyproject.toml", ".sl"],
-    pythonpath=True,
-    dotenv=True,
+from server_sam3db.patch_import import (
+    FOVEstimator,
+    HumanDetector,
+    HumanSegmentor,
+    load_sam_3d_body,
+    SAM3DBodyEstimator,
+    visualize_sample_together,
 )
-
-from sam_3d_body import load_sam_3d_body, SAM3DBodyEstimator
-from tools.build_detector import HumanDetector
-from tools.build_fov_estimator import FOVEstimator
-from tools.build_sam import HumanSegmentor
-from tools.vis_utils import visualize_sample_together
 
 
 class Sam3dBodyPolicy(BasePolicy):
