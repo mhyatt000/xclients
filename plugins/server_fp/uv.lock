@@ -2780,6 +2780,18 @@ dependencies = [
     { name = "xclients" },
 ]
 
+[package.optional-dependencies]
+core = [
+    { name = "numpy" },
+    { name = "nvdiffrast" },
+    { name = "pydantic" },
+    { name = "torch" },
+    { name = "trimesh" },
+    { name = "tyro" },
+    { name = "webpolicy" },
+    { name = "xclients" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "fastapi" },
@@ -2792,12 +2804,15 @@ requires-dist = [
     { name = "msgpack-numpy" },
     { name = "ninja" },
     { name = "numpy" },
+    { name = "numpy", marker = "extra == 'core'", specifier = ">=2.4.1" },
     { name = "nvdiffrast", git = "https://github.com/NVlabs/nvdiffrast.git" },
+    { name = "nvdiffrast", marker = "extra == 'core'", git = "https://github.com/NVlabs/nvdiffrast.git" },
     { name = "omegaconf" },
     { name = "open3d" },
     { name = "opencv-python" },
     { name = "psutil" },
     { name = "pydantic" },
+    { name = "pydantic", marker = "extra == 'core'", specifier = ">=2.12.5" },
     { name = "pyglet", specifier = "<2" },
     { name = "pyrender" },
     { name = "pytorch3d", git = "https://github.com/facebookresearch/pytorch3d" },
@@ -2805,17 +2820,23 @@ requires-dist = [
     { name = "scikit-image" },
     { name = "scipy" },
     { name = "torch" },
+    { name = "torch", marker = "extra == 'core'", specifier = ">=2.10.0" },
     { name = "torchvision" },
     { name = "tqdm" },
     { name = "transformations" },
     { name = "transforms3d" },
     { name = "trimesh" },
+    { name = "trimesh", marker = "extra == 'core'", specifier = ">=4.11.1" },
     { name = "typer" },
     { name = "tyro", specifier = ">=1.0.5" },
+    { name = "tyro", marker = "extra == 'core'", specifier = ">=1.0.5" },
     { name = "uvicorn" },
     { name = "webpolicy", git = "https://github.com/mhyatt000/webpolicy" },
+    { name = "webpolicy", marker = "extra == 'core'", git = "https://github.com/mhyatt000/webpolicy" },
     { name = "xclients", editable = "../../" },
+    { name = "xclients", marker = "extra == 'core'", editable = "../../" },
 ]
+provides-extras = ["core"]
 
 [[package]]
 name = "setuptools"
