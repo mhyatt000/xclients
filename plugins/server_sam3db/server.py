@@ -46,36 +46,36 @@ class Sam3dBodyPolicy(BasePolicy):
             mhr_path=str(mhr_path),
         )
 
-        try:
-            self.detector = HumanDetector(
+        self.detector = (
+            HumanDetector(
                 name="vitdet",
                 device=self.device,
-                path=str(detector_path)
+                path=str(detector_path),
             )
-        except Exception as e:
-            print("⚠️ ViTDet disabled:", e)
-            self.detector = None
-
-        try:
-            self.segmentor = HumanSegmentor(
+            if detector_path.exists()
+            else None
+        )
+        
+        self.segmentor = (
+            HumanSegmentor(
                 name="sam2",
                 device=self.device,
-                path=str(segmentor_path)
+                path=str(segmentor_path),
             )
-        except Exception as e:
-            print("⚠️ SAM2 disabled:", e)
-            self.segmentor = None
+            if segmentor_path.exists()
+            else None
+        )
 
-        try:
-            self.fov_estimator = FOVEstimator(
+        self.fov_estimator = (
+            FOVEstimator(
                 name="moge2",
                 device=self.device,
-                path=str(fov_path)
+                path=str(fov_path),
             )
-        except Exception as e:
-            print("⚠️ FOV disabled:", e)
-            self.fov_estimator = None       
-            
+            if fov_path.exists()
+            else None
+        )
+
         #  estimator 
         self.estimator = SAM3DBodyEstimator(
             sam_3d_body_model=model,
@@ -99,6 +99,11 @@ class Sam3dBodyPolicy(BasePolicy):
             use_mask=False,
         )
 
+        # print("outputs type:", type(outputs))
+        # print("num persons:", len(outputs))
+
+        person = outputs[0]
+        
         rendered_img = None
         if render:
             rendered_img = visualize_sample_together(
@@ -109,10 +114,20 @@ class Sam3dBodyPolicy(BasePolicy):
 
             rendered_img = rendered_img.astype(np.uint8)
 
+        mesh_3d={
+            "vertices": person["pred_vertices"],
+            "faces": self.faces,          
+            "joints_3d": person["pred_keypoints_3d"],
+
+            "camera": {
+                "translation": person["pred_cam_t"],
+                "focal_length": person["focal_length"],
+            },
+        }
+
         return {
-            "render": rendered_img 
-            #QA: do we need 3d model's data?or just image?
-            #eg: "3d_data": outputs or more details: vertices、joints...
+            "render": rendered_img, 
+            "mesh_3d": mesh_3d,
         }
 
 
