@@ -18,7 +18,6 @@ from server_sam3db.patch_import import (
     visualize_sample_together,
 )
 
-
 class Sam3dBodyPolicy(BasePolicy):
     def __init__(self):
         print("Initializing SAM3D Body server...")
@@ -94,25 +93,46 @@ class Sam3dBodyPolicy(BasePolicy):
             use_mask=False,
         )
 
-        # print("outputs type:", type(outputs))
-        # print("num persons:", len(outputs))
-
         person = outputs[0]
+
+        def to_numpy_safe(x):
+            if x is None:
+                return None
+            if torch.is_tensor(x):
+                return x.detach().cpu().numpy()
+            return x
 
         rendered_img = None
         if render:
             rendered_img = visualize_sample_together(image, outputs, self.estimator.faces)
 
             rendered_img = rendered_img.astype(np.uint8)
-
+        
         mesh_3d = {
-            "vertices": person["pred_vertices"],
-            "faces": self.faces,
-            "joints_3d": person["pred_keypoints_3d"],
-            "camera": {
-                "translation": person["pred_cam_t"],
-                "focal_length": person["focal_length"],
-            },
+            "bbox": to_numpy_safe(person["bbox"]),
+            "focal_length": float(person["focal_length"]),
+
+            "pred_vertices": to_numpy_safe(person["pred_vertices"]),
+            "pred_keypoints_3d": to_numpy_safe(person["pred_keypoints_3d"]),
+            "pred_keypoints_2d": to_numpy_safe(person["pred_keypoints_2d"]),
+            "pred_joint_coords": to_numpy_safe(person["pred_joint_coords"]),
+
+            "pred_cam_t": to_numpy_safe(person["pred_cam_t"]),
+            "scale_params": to_numpy_safe(person.get("scale_params")),
+
+            "global_rot": to_numpy_safe(person["global_rot"]),
+            "pred_global_rots": to_numpy_safe(person["pred_global_rots"]),
+            "pred_pose_raw": to_numpy_safe(person["pred_pose_raw"]),
+            "body_pose_params": to_numpy_safe(person["body_pose_params"]),
+            "hand_pose_params": to_numpy_safe(person["hand_pose_params"]),
+
+            "shape_params": to_numpy_safe(person["shape_params"]),
+            "expr_params": to_numpy_safe(person["expr_params"]),
+            "mhr_model_params": to_numpy_safe(person["mhr_model_params"]),
+
+            "mask": to_numpy_safe(person["mask"]),
+            "lhand_bbox": to_numpy_safe(person["lhand_bbox"]),
+            "rhand_bbox": to_numpy_safe(person["rhand_bbox"]),
         }
 
         return {
