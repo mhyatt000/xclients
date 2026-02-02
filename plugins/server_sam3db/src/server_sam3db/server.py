@@ -19,19 +19,17 @@ from server_sam3db.patch_import import (
 )
 
 class Sam3dBodyPolicy(BasePolicy):
-    def __init__(self):
+    def __init__(self,root:Path):
         print("Initializing SAM3D Body server...")
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        sam3db_root = Path(os.environ["SAM3DB_ROOT"])
-
-        # paths from env
-        ckpt_path = sam3db_root / "checkpoints" / "sam3d_body.ckpt"
-        mhr_path = sam3db_root / "assets" / "mhr"
-        detector_path = sam3db_root / "pretrained_models" / "vitdet"
-        segmentor_path = sam3db_root / "pretrained_models" / "sam2"
-        fov_path = sam3db_root / "pretrained_models" / "moge2"
+        # paths from SAM3DB root
+        ckpt_path = root / "checkpoints" / "sam3d_body.ckpt"
+        mhr_path = root / "assets" / "mhr"
+        detector_path = root / "pretrained_models" / "vitdet"
+        segmentor_path = root / "pretrained_models" / "sam2"
+        fov_path = root / "pretrained_models" / "moge2"
 
         # load main model
         model, model_cfg = load_sam_3d_body(
