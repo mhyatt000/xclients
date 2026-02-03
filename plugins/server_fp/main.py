@@ -125,8 +125,19 @@ class FoundationPosePolicy(BasePolicy):
 
             print(f"DEBUG: Loading mask from {req.mask_path}")
             mask_data = np.load(req.mask_path)
-            key = "masks" if "masks" in mask_data else "mask"
+            
+            available_keys = list(mask_data.files)
+
+            if "masks" in available_keys:
+                key = "masks"
+            elif "mask" in available_keys:
+                key = "mask"
+            else:
+                key = available_keys[0]
+
+            print(f"DEBUG: Found keys {available_keys}, selecting '{key}'")
             mask = mask_data[key]
+
 
             if mask.ndim == 3:
                 mask = mask[0]
@@ -137,7 +148,7 @@ class FoundationPosePolicy(BasePolicy):
                 K=reader.K,
                 rgb=reader.get_color(0),
                 depth=reader.get_depth(0),  # Dummy depth if using RGB only
-                mask=mask,
+                ob_mask=mask,
                 iteration=5,
             )
             print(f"DEBUG: Registration complete. Pose: \n{pose}")
