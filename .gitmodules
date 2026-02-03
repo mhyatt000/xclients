@@ -10,6 +10,3 @@
 [submodule "external/foundation_pose"]
 	path = external/foundation_pose
 	url = git@github.com:Nhogg/FoundationPose.git
-[submodule "FoundationPose"]
-	path = FoundationPose
-	url = https://github.com/mhyatt000/FoundationPose
