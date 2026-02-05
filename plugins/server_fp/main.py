@@ -4,6 +4,7 @@ from pathlib import Path
 import sys
 import traceback
 from typing import Annotated, Any, Literal
+import os
 
 import numpy as np
 import nvdiffrast.torch as dr
@@ -121,7 +122,15 @@ class FoundationPosePolicy(BasePolicy):
             self._load_model(req.mesh_path, debug_dir="debug_fp")
 
             print(f"DEBUG: Reading images from {req.rgb_dir}")
-            reader = YcbineoatReader(video_dir=req.rgb_dir)
+            
+            search_path = req.rgb_dir
+            if search_path.rstrip('/').endswith('rgb'):
+                search_path = os.path.dirname(search_path.rstrip('/'))
+
+            print(f"DEBUG: Reader looking in: {search_path}")
+            reader = YcbineoatReader(video_dir=search_path)
+    
+            #reader = YcbineoatReader(video_dir=req.rgb_dir)
 
             print(f"DEBUG: Loading mask from {req.mask_path}")
             mask_data = np.load(req.mask_path)
