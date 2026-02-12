@@ -29,6 +29,11 @@ dependencies = [
 webpolicy = { git = "https://github.com/mhyatt000/webpolicy" }
 xarm-python-sdk = { git = "https://github.com/xArm-Developer/xArm-Python-SDK" }
 
+[tool.uv.workspace]
+members = [
+    "plugins/server_sam3do",
+]
+
 # [project.scripts]
 # yourpkg = "yourpkg.cli:main"   # if you expose a CLI
 # da3 = "depth_anything_3.cli:app"

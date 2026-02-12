@@ -1,6 +1,6 @@
-def main():
-    print("Hello from server-sam3do!")
 
 
-if __name__ == "__main__":
-    main()
+class Sam3dBodyPolicy(BasePolicy):
+    def __init__(self, root:Path):
+        print("Initializing SAM3D Body server...")
+
