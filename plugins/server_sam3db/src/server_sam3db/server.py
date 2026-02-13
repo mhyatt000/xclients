@@ -91,8 +91,6 @@ class Sam3dBodyPolicy(BasePolicy):
     def step(self, payload: dict, render: bool = False):
         image = payload["image"]
 
-        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-
         outputs = self.estimator.process_one_image(
             image,
             bbox_thr=0.8,
