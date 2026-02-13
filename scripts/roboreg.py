@@ -1,18 +1,18 @@
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass, field
+import logging
 from pathlib import Path
 from typing import Literal
 
+from common import Config, spec
 import cv2
 import numpy as np
-import rerun as rr
-import tyro
-from common import Config, spec
 from PIL import Image
+import rerun as rr
 from rich import print
 from sam3 import SAMConfig
+import tyro
 from webpolicy.client import Client
 
 from xclients.core.run import rerun_urdf
@@ -154,9 +154,7 @@ def main(cfg: RoboregConfig) -> None:
                     # 'intrinsics': np.array([_intr]*len(frames))
                 }
                 da_out = da.step(da_payload)
-                data["depth"] = np.array(
-                    Image.fromarray(da_out["depth"][0]).resize((width, height), Image.NEAREST)
-                )
+                data["depth"] = np.array(Image.fromarray(da_out["depth"][0]).resize((width, height), Image.NEAREST))
                 print(spec(data))
 
                 data["intrinsics"] = _intr
@@ -220,9 +218,7 @@ def main(cfg: RoboregConfig) -> None:
                 h, w = img.shape[:2]
                 size = max(h, w)
                 new_img = np.zeros((size, size, 3), dtype=img.dtype)
-                new_img[
-                    (size - h) // 2 : (size - h) // 2 + h, (size - w) // 2 : (size - w) // 2 + w
-                ] = img
+                new_img[(size - h) // 2 : (size - h) // 2 + h, (size - w) // 2 : (size - w) // 2 + w] = img
                 return new_img
 
             # # where mask is true increase red channel by 50%
@@ -230,9 +226,7 @@ def main(cfg: RoboregConfig) -> None:
             overlays = list(overlays)
             for i, o in enumerate(overlays):
                 over = o.astype(np.uint8)
-                over[..., 2] = np.where(
-                    datas[i]["mask"] > 0, np.clip(over[..., 2] + 0.5 * 255, 0, 255), over[..., 2]
-                )
+                over[..., 2] = np.where(datas[i]["mask"] > 0, np.clip(over[..., 2] + 0.5 * 255, 0, 255), over[..., 2])
                 overlays[i] = over
 
             overlays = [squarecrop(overlay) for overlay in overlays]
@@ -268,9 +262,7 @@ def main(cfg: RoboregConfig) -> None:
             da_payload = {"image": frames, "intrinsics": np.array([_intr] * len(frames))}
             da_out = da.step(da_payload)
             if False:
-                depth = np.array(
-                    Image.fromarray(da_out["depth"][0]).resize((width, height), Image.NEAREST)
-                )
+                depth = np.array(Image.fromarray(da_out["depth"][0]).resize((width, height), Image.NEAREST))
 
                 x, y = np.meshgrid(np.arange(width), np.arange(height))
                 x = (x - cx) / fx

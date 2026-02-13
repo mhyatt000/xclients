@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 import os
 
-import tyro
 from rich import print
 from server_hamer.server import Config, Policy
+import tyro
 from webpolicy.server import Server
 
 

@@ -1,20 +1,21 @@
-import os
+from __future__ import annotations
+
 from dataclasses import dataclass, field
+import os
 from pathlib import Path
 
 import cv2
+from flax.traverse_util import flatten_dict
+from hamer.configs import CACHE_DIR_HAMER
+from hamer.models import DEFAULT_CHECKPOINT, download_models, load_hamer
+from hamer.utils import SkeletonRenderer
+from hamer.utils.renderer import Renderer
 import jax
 import jax.image as jimage
 import jax.numpy as jnp
 import numpy as np
 import torch
 import tyro
-from flax.traverse_util import flatten_dict
-from hamer.configs import CACHE_DIR_HAMER
-from hamer.models import DEFAULT_CHECKPOINT, download_models, load_hamer
-from hamer.utils import SkeletonRenderer
-from hamer.utils.renderer import Renderer
-from rich.pretty import pprint
 from webpolicy.base_policy import BasePolicy
 from webpolicy.server import Server
 
@@ -30,7 +31,7 @@ from server_hamer.vitpose_model import ViTPoseModel
 
 def resize(img, size=(224, 224)):
     # Assume img shape (..., H, W, C)
-    *batch, h, w, c = img.shape
+    *batch, _h, _w, c = img.shape
     out_shape = (*batch, size[0], size[1], c)
 
     img = jimage.resize(img, out_shape, method="lanczos3", antialias=True)
@@ -81,7 +82,7 @@ class Distortion:
     p2: float  # tangential distortion
     k3: float  # radial distortion
 
-    def from_vector(self, vec: list[float]) -> "Distortion":
+    def from_vector(self, vec: list[float]) -> Distortion:
         assert len(vec) == 5, "Vector must have 5 elements"
         return Distortion(*vec)
 
@@ -108,7 +109,7 @@ class Policy(BasePolicy):
         download_models(CACHE_DIR_HAMER)
         self.model, self.model_cfg = load_hamer(cfg.checkpoint)
 
-        pprint(self.model_cfg)
+        print(self.model_cfg)
 
         # Setup HaMeR model
         self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
@@ -185,7 +186,7 @@ class Policy(BasePolicy):
 
         print("### 4. get MANO parameters from HaMeR")
 
-        OUT, front = run_hand_reconstruction(
+        OUT, _front = run_hand_reconstruction(
             model_cfg,
             img_cv2,
             bboxes,
@@ -238,7 +239,7 @@ class Policy(BasePolicy):
         out = jax.tree.map(clean, out)
 
         if not self.cfg.fast:
-            pprint(spec(out))
+            print(spec(out))
 
         [lambda x: x.transpose(1, 2, 0), lambda x: cv2.resize(x, (224, 224))]
 
@@ -284,7 +285,7 @@ class Config:
 
 
 def main(cfg: Config):
-    pprint(cfg)
+    print(cfg)
     os.environ["CUDA_VISIBLE_DEVICES"] = str(cfg.policy.device)
 
     policy = Policy(cfg.policy)

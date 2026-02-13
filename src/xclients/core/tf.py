@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import numpy as np
 
 # change from ROS FLU (Forward, Left, Up) to opencv RDF (Right, Down, Forward)

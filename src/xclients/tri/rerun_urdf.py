@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 import os
-from typing import TYPE_CHECKING, cast
+from typing import cast, TYPE_CHECKING
 from urllib.parse import urlparse
 
 import numpy as np
@@ -10,8 +10,8 @@ import rerun as rr  # pip install rerun-sdk
 from yourdfpy import URDF
 
 if TYPE_CHECKING:
-    import trimesh
     from std_msgs.msg import String
+    import trimesh
 
 
 def ament_locate_package(fname: str) -> str:
@@ -30,9 +30,7 @@ def load_urdf_from_msg(msg: String) -> URDF:
     return URDF.load(f, filename_handler=ament_locate_package)
 
 
-def log_scene(
-    scene: trimesh.Scene, node: str, path: str | None = None, static: bool = False
-) -> None:
+def log_scene(scene: trimesh.Scene, node: str, path: str | None = None, static: bool = False) -> None:
     """Log a trimesh scene to rerun."""
     path = path + "/" + node if path else node
 

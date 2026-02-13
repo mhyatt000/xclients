@@ -1,4 +1,6 @@
 # pip install "open3d[gui]"
+from __future__ import annotations
+
 import threading
 import time
 
@@ -38,9 +40,7 @@ class O3DPointCloudViewer:
         pcd = o3d.geometry.PointCloud()
         scene.scene.add_geometry("pcd", pcd, mat)
         scene.scene.show_axes(True)
-        scene.setup_camera(
-            60.0, o3d.geometry.AxisAlignedBoundingBox([-1, -1, -1], [1, 1, 1]), [0, 0, 0]
-        )
+        scene.setup_camera(60.0, o3d.geometry.AxisAlignedBoundingBox([-1, -1, -1], [1, 1, 1]), [0, 0, 0])
         print("cam")
 
         self.app = app

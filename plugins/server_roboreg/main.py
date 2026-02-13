@@ -1,6 +1,8 @@
-import tyro
+from __future__ import annotations
+
 from server_roboreg.common import HydraConfig
 from server_roboreg.hydra import Hydra
+import tyro
 from webpolicy.server import Server
 
 

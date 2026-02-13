@@ -1,25 +1,26 @@
-import os
-import os.path as osp
-import time
+from __future__ import annotations
+
 from dataclasses import dataclass
 from functools import wraps
+import os
+import os.path as osp
 from pathlib import Path
-from pprint import pprint
+import time
 
 import cv2
-import imageio
-import jax
-import numpy as np
-import torch
 from flax.traverse_util import flatten_dict
 from hamer.configs import CACHE_DIR_HAMER
 from hamer.datasets.vitdet_dataset import DEFAULT_MEAN, DEFAULT_STD, ViTDetDataset
 from hamer.models import download_models, load_hamer
-from hamer.utils import SkeletonRenderer, recursive_to
+from hamer.utils import recursive_to, SkeletonRenderer
 from hamer.utils.geometry import perspective_projection
 from hamer.utils.render_openpose import render_openpose
-from hamer.utils.renderer import Renderer, cam_crop_to_full
+from hamer.utils.renderer import cam_crop_to_full, Renderer
+import imageio
+import jax
+import numpy as np
 from PIL import Image
+import torch
 
 from server_hamer.array_util import keyp2bbox
 from server_hamer.log import logger
@@ -121,7 +122,7 @@ def infer(img, detector, vitpose, device, model, model_cfg, renderer: Renderer, 
 
     logger.info("### 4. get MANO parameters from HaMeR")
 
-    OUT, front = run_hand_reconstruction(
+    OUT, _front = run_hand_reconstruction(
         model_cfg,
         img_cv2,
         bboxes,
@@ -221,12 +222,17 @@ def run_hand_reconstruction(
         dataloader = torch.utils.data.DataLoader(dataset, batch_size=8, shuffle=False, num_workers=0)
         return dataset, dataloader
 
-    dataset, dataloader = mk_dataset()
+    _dataset, dataloader = mk_dataset()
 
     # S = Store(["verts", "cam_t", "right"])
     OUT = Store(
-        ["img", "personid", "box_center", "box_size", "img_size", "right"]
-        + [
+        [
+            "img",
+            "personid",
+            "box_center",
+            "box_size",
+            "img_size",
+            "right",
             "pred_cam",
             "pred_mano_params",
             "pred_cam_t",
@@ -234,8 +240,10 @@ def run_hand_reconstruction(
             "pred_keypoints_3d",
             "pred_vertices",
             "pred_keypoints_2d",
+            "pred_cam_t_full",
+            "img_size",
+            "scaled_focal_length",
         ]
-        + ["pred_cam_t_full", "img_size", "scaled_focal_length"]
     )
 
     _out = []
@@ -289,13 +297,7 @@ def run_hand_reconstruction(
 
         pred_cam_t_full, img_size, scaled_focal_length = process_batch(batch, out, model_cfg, force_focal=args.fx)
 
-        OUT.add(
-            **{
-                "pred_cam_t_full": pred_cam_t_full,
-                "img_size": img_size,
-                "scaled_focal_length": scaled_focal_length,
-            }
-        )
+        OUT.add(pred_cam_t_full=pred_cam_t_full, img_size=img_size, scaled_focal_length=scaled_focal_length)
 
         # render_hand_view(
         # renderer, batch, out, pred_cam_t_full, img_size, img_path, S, args
@@ -425,9 +427,9 @@ def render_front_view(
     input_img = np.concatenate([input_img, np.ones_like(input_img[:, :, :1])], axis=2)
     input_img_overlay = input_img[:, :, :3] * (1 - cam_view[:, :, 3:]) + cam_view[:, :, :3] * cam_view[:, :, 3:]
 
-    img_fname, _ = os.path.splitext(os.path.basename(img_path))
+    _img_fname, _ = os.path.splitext(os.path.basename(img_path))
     # cv2.imwrite(
-    # os.path.join(args.out_folder, f"{img_fname}_all.jpg"),
+    # os.path.join(args.out_folder, f"{_img_fname}_all.jpg"),
     # 255 * input_img_overlay[:, :, ::-1],
     # )
 
@@ -444,9 +446,9 @@ def init_vitdet():
     .torch/iopath_cache/detectron2/ViTDet/COCO/cascade_mask_rcnn_vitdet_h/f328730692/model_final_f05665.pkl
     """
 
+    from detectron2.config import LazyConfig
     import hamer
-    from detectron2.config import LazyConfig  # noqa
-    from hamer.utils.utils_detectron2 import DefaultPredictor_Lazy  # noqa
+    from hamer.utils.utils_detectron2 import DefaultPredictor_Lazy
 
     cfg_path = Path(hamer.__file__).parent / "configs" / "cascade_mask_rcnn_vitdet_h_75ep.py"
     detectron2_cfg = LazyConfig.load(str(cfg_path))
@@ -458,8 +460,8 @@ def init_vitdet():
 
 
 def init_regnety():
-    from detectron2 import model_zoo  # noqa
-    from hamer.utils.utils_detectron2 import DefaultPredictor_Lazy  # noqa
+    from detectron2 import model_zoo
+    from hamer.utils.utils_detectron2 import DefaultPredictor_Lazy
 
     detectron2_cfg = model_zoo.get_config("new_baselines/mask_rcnn_regnety_4gf_dds_FPN_400ep_LSJ.py", trained=True)
     detectron2_cfg.model.roi_heads.box_predictor.test_score_thresh = 0.5
@@ -560,13 +562,13 @@ class Config:
 
 def main(cfg: Config):
     args = cfg
-    pprint(args)
+    print(args)
 
     # Download and load checkpoints
     download_models(CACHE_DIR_HAMER)
     model, model_cfg = load_hamer(args.checkpoint)
 
-    pprint(model_cfg)
+    print(model_cfg)
 
     # Setup HaMeR model
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
@@ -605,7 +607,7 @@ def main(cfg: Config):
 
             out = jax.tree.map(clean, out)
 
-            pprint(spec(out))
+            print(spec(out))
 
             np.savez(f"pose_{i}.npz", **out)
             continue

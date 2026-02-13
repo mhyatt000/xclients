@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass, field
+import logging
 from pathlib import Path
 
 import cv2
 import numpy as np
 import rerun as rr
-import tyro
 from rich import print
+import tyro
 from webpolicy.client import Client
 
 from xclients.core.cfg import Config, spec
@@ -101,12 +101,12 @@ def main(cfg: DA3Config) -> None:
             ],
         )
 
-        FLU2RDF = HT @ FLU2RDF
+        flu2rdf = HT @ FLU2RDF
         rr.log(
             "world",
             rr.Transform3D(
-                translation=FLU2RDF[:3, 3],
-                mat3x3=FLU2RDF[:3, :3],
+                translation=flu2rdf[:3, 3],
+                mat3x3=flu2rdf[:3, :3],
             ),
             static=True,
         )

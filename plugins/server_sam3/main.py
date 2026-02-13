@@ -7,15 +7,15 @@ from typing import Annotated, Literal
 from uuid import uuid4
 
 import numpy as np
+from PIL import Image
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from sam3.model.sam3_image_processor import Sam3Processor
+from sam3.model_builder import build_sam3_image_model, build_sam3_video_predictor
 import torch
 
 # from transformers import AutoProcessor
 # from transformers import Sam3Processor, Sam3Model
 import tyro
-from PIL import Image
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
-from sam3.model.sam3_image_processor import Sam3Processor
-from sam3.model_builder import build_sam3_image_model, build_sam3_video_predictor
 from webpolicy.base_policy import BasePolicy
 from webpolicy.server import Server
 
@@ -83,12 +83,12 @@ class Sam3Policy(BasePolicy):
         self._adapter = TypeAdapter(RequestPayload)
         self._streaming_sessions: dict[str, object] = {}
 
-    def reset(self, *args, **kwargs) -> None:  # noqa: ANN001, D401
+    def reset(self, *args, **kwargs) -> None:
         """Clear any cached streaming sessions."""
 
         self._streaming_sessions.clear()
 
-    def step(self, obs: dict) -> dict:  # noqa: D401
+    def step(self, obs: dict) -> dict:
         """Handle an image, batched video, or streaming request."""
 
         request = self._adapter.validate_python(obs)
@@ -146,9 +146,7 @@ class Sam3Policy(BasePolicy):
             video_storage_device="cpu",
             dtype=self.dtype,
         )
-        inference_session = self.processor.add_text_prompt(
-            inference_session=inference_session, text=request.text
-        )
+        inference_session = self.processor.add_text_prompt(inference_session=inference_session, text=request.text)
 
         session_id = str(uuid4())
         self._streaming_sessions[session_id] = inference_session

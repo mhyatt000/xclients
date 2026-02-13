@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pathlib import Path
 
 import rerun as rr
@@ -5,9 +7,7 @@ import rerun.blueprint as rrb
 from server_tri.camera_parameters import PinholeParameters
 
 
-def create_blueprint(
-    cameras: list[PinholeParameters], parent: Path = Path("world")
-) -> rrb.Blueprint:
+def create_blueprint(cameras: list[PinholeParameters], parent: Path = Path("world")) -> rrb.Blueprint:
     # get only n cameras evenly spaced
     # n_cameras = len(cameras)
     # step = n_cameras // 4

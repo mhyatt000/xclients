@@ -2,17 +2,18 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import ClassVar
 
 import mmpose
-import numpy as np
-import torch
-import torch.nn as nn
 from mmpose.apis import (
     inference_top_down_pose_model,
     init_pose_model,
     process_mmdet_results,
     vis_pose_result,
 )
+import numpy as np
+import torch
+import torch.nn as nn
 
 os.environ["PYOPENGL_PLATFORM"] = "egl"
 
@@ -24,7 +25,7 @@ VIT_DIR = str(Path(mmpose.__file__).resolve().parent / ".mim")
 
 
 class ViTPoseModel:
-    MODEL_DICT = {
+    MODEL_DICT: ClassVar[dict] = {
         "ViTPose+-G (multi-task train, COCO)": {
             "config": f"{VIT_DIR}/configs/wholebody/2d_kpt_sview_rgb_img/topdown_heatmap/coco-wholebody/ViTPose_huge_wholebody_256x192.py",
             "model": f"{ROOT_DIR}/_DATA/vitpose_ckpts/vitpose+_huge/wholebody.pth",

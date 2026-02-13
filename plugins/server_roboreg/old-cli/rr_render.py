@@ -147,7 +147,7 @@ def main():
         scene.robot.configure(joint_states)
 
         # render
-        renders = scene.observe_from(list(scene.cameras.keys())[0])
+        renders = scene.observe_from(next(iter(scene.cameras.keys())))
 
         # save
         images = images.numpy()

@@ -1,4 +1,5 @@
 # examples/Python/Advanced/non_blocking_visualization.py
+from __future__ import annotations
 
 import numpy as np
 import open3d as o3d

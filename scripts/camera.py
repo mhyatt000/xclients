@@ -7,8 +7,8 @@ callers can request a camera by ID and receive a decoded ``numpy`` image.
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
+import logging
 
 import cv2
 import numpy as np

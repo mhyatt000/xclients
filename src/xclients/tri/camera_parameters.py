@@ -1,9 +1,11 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from typing import Literal
 
-import numpy as np
 from einops import rearrange
 from jaxtyping import Float
+import numpy as np
 from numpy import ndarray
 
 
@@ -46,9 +48,9 @@ class Extrinsics:
     # Rotation and translation can be provided for both world-to-camera
     # and camera-to-world transformations
     world_R_cam: Float[ndarray, "3 3"] | None = None
-    world_t_cam: Float[ndarray, "3"] | None = None
+    world_t_cam: Float[ndarray, 3] | None = None
     cam_R_world: Float[ndarray, "3 3"] | None = None
-    cam_t_world: Float[ndarray, "3"] | None = None
+    cam_t_world: Float[ndarray, 3] | None = None
     # The projection matrix and transformation matrices will be computed in post-init
     world_T_cam: Float[ndarray, "4 4"] = field(init=False)
     cam_T_world: Float[ndarray, "4 4"] = field(init=False)
@@ -64,9 +66,7 @@ class Extrinsics:
             )
             self.cam_T_world: Float[ndarray, "4 4"] = np.linalg.inv(self.world_T_cam)
             # Extract camera-to-world rotation and translation from the inverse matrix
-            self.cam_R_world, self.cam_t_world = self.decompose_transformation_matrix(
-                self.cam_T_world
-            )
+            self.cam_R_world, self.cam_t_world = self.decompose_transformation_matrix(self.cam_T_world)
         # If camera-to-world is provided, compute the transformation matrix and its inverse
         elif self.cam_R_world is not None and self.cam_t_world is not None:
             self.cam_T_world: Float[ndarray, "4 4"] = self.compose_transformation_matrix(
@@ -74,24 +74,18 @@ class Extrinsics:
             )
             self.world_T_cam: Float[ndarray, "4 4"] = np.linalg.inv(self.cam_T_world)
             # Extract world-to-camera rotation and translation from the inverse matrix
-            self.world_R_cam, self.world_t_cam = self.decompose_transformation_matrix(
-                self.world_T_cam
-            )
+            self.world_R_cam, self.world_t_cam = self.decompose_transformation_matrix(self.world_T_cam)
         else:
-            raise ValueError(
-                "Either world-to-camera or camera-to-world rotation and translation must be provided."
-            )
+            raise ValueError("Either world-to-camera or camera-to-world rotation and translation must be provided.")
 
-    def compose_transformation_matrix(
-        self, R: Float[ndarray, "3 3"], t: Float[ndarray, "3"]
-    ) -> Float[ndarray, "4 4"]:
+    def compose_transformation_matrix(self, R: Float[ndarray, "3 3"], t: Float[ndarray, 3]) -> Float[ndarray, "4 4"]:
         Rt: Float[ndarray, "3 4"] = np.hstack([R, rearrange(t, "c -> c 1")])
         T: Float[ndarray, "4 4"] = np.vstack([Rt, np.array([0, 0, 0, 1])])
         return T
 
     def decompose_transformation_matrix(
         self, T: Float[ndarray, "4 4"]
-    ) -> tuple[Float[ndarray, "3 3"], Float[ndarray, "3"]]:
+    ) -> tuple[Float[ndarray, "3 3"], Float[ndarray, 3]]:
         R: Float[ndarray, "3 3"] = T[:3, :3]
         t: Float[ndarray, 3] = T[:3, 3]
         return R, t
@@ -130,7 +124,7 @@ class Intrinsics:
         # Compute the camera matrix using the focal length and principal point
         self.k_matrix = np.array(
             [
-                [self.fl_x, 0, self.cx],  # noqa: E501
+                [self.fl_x, 0, self.cx],
                 [0, self.fl_y, self.cy],
                 [0, 0, 1],
             ]
@@ -173,9 +167,7 @@ class PinholeParameters:
 
     def compute_projection_matrix(self) -> None:
         # Compute the projection matrix using k_matrix and world_T_cam
-        self.projection_matrix: Float[ndarray, "3 4"] = (
-            self.intrinsics.k_matrix @ self.extrinsics.cam_T_world[:3, :]
-        )
+        self.projection_matrix: Float[ndarray, "3 4"] = self.intrinsics.k_matrix @ self.extrinsics.cam_T_world[:3, :]
 
 
 @dataclass
@@ -193,9 +185,7 @@ class Fisheye62Parameters:
 
     def compute_projection_matrix(self) -> None:
         # Compute the projection matrix using k_matrix and world_T_cam
-        self.projection_matrix: Float[ndarray, "3 4"] = (
-            self.intrinsics.k_matrix @ self.extrinsics.cam_T_world[:3, :]
-        )
+        self.projection_matrix: Float[ndarray, "3 4"] = self.intrinsics.k_matrix @ self.extrinsics.cam_T_world[:3, :]
 
 
 def to_homogeneous(
@@ -230,9 +220,7 @@ def from_homogeneous(
     return points[:, :3]
 
 
-def rescale_intri(
-    camera_intrinsics: Intrinsics, *, target_width: int, target_height: int
-) -> Intrinsics:
+def rescale_intri(camera_intrinsics: Intrinsics, *, target_width: int, target_height: int) -> Intrinsics:
     """
     Rescales the input image and intrinsic matrix by a given scale factor.
 
