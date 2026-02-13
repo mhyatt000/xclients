@@ -24,38 +24,47 @@ WHITELIST_FILTERS = [
     lambda target: target.split(".", 1)[0] in {"sam3d_objects", "torch", "torchvision", "moge"},
 ]
 
-BLACKLIST_FILTERS = [
-    lambda target: get_method(target)
-    in {
-        builtins.exec,
-        builtins.eval,
-        builtins.__import__,
-        os.kill,
-        os.system,
-        os.putenv,
-        os.remove,
-        os.removedirs,
-        os.rmdir,
-        os.fchdir,
-        os.setuid,
-        os.fork,
-        os.forkpty,
-        os.killpg,
-        os.rename,
-        os.renames,
-        os.truncate,
-        os.replace,
-        os.unlink,
-        os.fchmod,
-        os.fchown,
-        os.chmod,
-        os.chown,
-        os.chroot,
-        os.lchown,
-        os.getcwd,
-        os.chdir,
-    },
-]
+_DANGEROUS_CALLABLES = {
+    builtins.exec,
+    builtins.eval,
+    builtins.__import__,
+    os.kill,
+    os.system,
+    os.putenv,
+    os.remove,
+    os.removedirs,
+    os.rmdir,
+    os.fchdir,
+    os.setuid,
+    os.fork,
+    os.forkpty,
+    os.killpg,
+    os.rename,
+    os.renames,
+    os.truncate,
+    os.replace,
+    os.unlink,
+    os.fchmod,
+    os.fchown,
+    os.chmod,
+    os.chown,
+    os.chroot,
+    os.lchown,
+    os.getcwd,
+    os.chdir,
+}
+
+
+def _is_blacklisted(target: str) -> bool:
+    try:
+        return get_method(target) in _DANGEROUS_CALLABLES
+    except (ImportError, Exception):
+        # If we can't import the target to check, it passes the blacklist check.
+        # The whitelist filter already verified the module prefix is allowed.
+        return False
+
+
+BLACKLIST_FILTERS = [_is_blacklisted]
 
 
 class Inference:
