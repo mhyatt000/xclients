@@ -1,21 +1,20 @@
-import os
-import sys
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
+from omegaconf import OmegaConf
+from rich import print
 import torch
-import tyro
 from webpolicy.base_policy import BasePolicy
 
-os.environ["CUDA_HOME"] = os.environ.get("CONDA_PREFIX", "")
-os.environ["LIDRA_SKIP_INIT"] = "true"
-
-sys.path.insert(0, "/home/nhogg/sam-3d-objects")
-sys.path.insert(0, "/home/nhogg/sam-3d-objects/notebook")
-
-from inference import Inference, check_hydra_safety, BLACKLIST_FILTERS, WHITELIST_FILTERS
-from omegaconf import OmegaConf
+from server_sam3do.inference import (
+    BLACKLIST_FILTERS,
+    check_hydra_safety,
+    Inference,
+    WHITELIST_FILTERS,
+)
 
 
 class Policy(BasePolicy):
