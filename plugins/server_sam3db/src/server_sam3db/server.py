@@ -18,6 +18,14 @@ from server_sam3db.patch_import import (
     visualize_sample_together,
 )
 
+def to_numpy_safe(x):
+    if x is None:
+        return None
+    if torch.is_tensor(x):
+        return x.detach().cpu().numpy()
+    return x
+
+
 class Sam3dBodyPolicy(BasePolicy):
     def __init__(self,root:Path):
         print("Initializing SAM3D Body server...")
@@ -92,13 +100,6 @@ class Sam3dBodyPolicy(BasePolicy):
         )
 
         person = outputs[0]
-
-        def to_numpy_safe(x):
-            if x is None:
-                return None
-            if torch.is_tensor(x):
-                return x.detach().cpu().numpy()
-            return x
 
         rendered_img = None
         if render:
