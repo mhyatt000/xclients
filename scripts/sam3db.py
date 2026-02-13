@@ -14,33 +14,37 @@ from xclients.core.cfg import Config, spec
 
 @dataclass
 class SAMConfig(Config):
-    prompt: str | None = None
-    confidence: float = 0.5
+    pass
+    # prompt: str | None = None
+    # confidence: float = 0.5
 
-    def __post_init__(self):
-        assert self.prompt is not None, "Prompt must be provided for SAM model."
+    # def __post_init__(self):
+    # assert self.prompt is not None, "Prompt must be provided for SAM model."
 
 
 def main(cfg: SAMConfig) -> None:
     client = Client(cfg.host, cfg.port)
-    cap = cv2.VideoCapture(0)
+    # cap = cv2.VideoCapture(0)
 
     logging.info("Displaying frames from camera 0; press 'q' to quit.")
     while True:
-        _ret, frame = cap.read()
-        print(frame.shape)
+        # ret, frame = cap.read()
+        frame = np.random.randint(0, 255, (480, 640, 3), dtype=np.uint8)
         payload = {
             "image": frame,
+            "mask": frame[..., 0],
             "type": "image",
-            "text": cfg.prompt,
-            "confidence": cfg.confidence,
+            # "text": cfg.prompt,
+            # "confidence": cfg.confidence,
         }
+        print(spec(payload))
         out = client.step(payload)
         if not out:
             logging.error("Failed to read frame from camera 0")
             continue
 
         print(spec(out))
+        continue
         if out.get("masks") is None:
             if cfg.show:
                 cv2.imshow("Camera 0", frame)

@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+
 def main():
     print("Hello from server-da3!")
 

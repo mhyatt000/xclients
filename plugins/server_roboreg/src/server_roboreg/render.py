@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
+import os
 
 import numpy as np
-import torch
 from roboreg.differentiable import VirtualCamera
 from roboreg.util import overlay_mask
 from roboreg.util.factories import create_robot_scene
+import torch
 from tqdm import tqdm
 
 from server_roboreg.common import HydraConfig

@@ -36,6 +36,8 @@ ignore = [ # exceptions to select
     "PD008",  # Lots of false positives.
     "ISC001", # Disabling to support ruff format.
     #
+    "RUF002", # String contains ambiguous `—` (EM DASH). Did you mean `-` (HYPHEN-MINUS)?
+    "RUF003", #  Comment contains ambiguous `–` (EN DASH). Did you mean `-` (HYPHEN-MINUS)?
     "RUF009", # Do not perform function call in dataclass defaults
     # "RUF059", # Unpacked variable is never used
     "PIE796", # Enum contains duplicate value:

@@ -1,7 +1,7 @@
+from __future__ import annotations
+
 import jax
 import numpy as np
-import torch
-import tyro
 from roboreg.differentiable import Robot
 from roboreg.hydra_icp import hydra_centroid_alignment, hydra_robust_icp
 from roboreg.io import URDFParser
@@ -14,6 +14,8 @@ from roboreg.util import (
     mask_extract_extended_boundary,
     to_homogeneous,
 )
+import torch
+import tyro
 from webpolicy.base_policy import BasePolicy
 from webpolicy.server import Server
 
@@ -136,10 +138,7 @@ class Hydra(BasePolicy):
         mesh_vertices = from_homogeneous(robot.configured_vertices)
         mesh_vertices = [mesh_vertices[i].contiguous() for i in range(batch)]
 
-        mesh_normals = [
-            compute_vertex_normals(vertices=mesh_vertices[i], faces=robot.faces)
-            for i in range(batch)
-        ]
+        mesh_normals = [compute_vertex_normals(vertices=mesh_vertices[i], faces=robot.faces) for i in range(batch)]
 
         # ----------------------------------------------------
         # Depth → XYZ

@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-import enum
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
+import enum
 from pathlib import Path
 
-import numpy as np
-import torch
-import tyro
 from depth_anything_3.api import DepthAnything3
 from depth_anything_3.specs import Prediction
 from depth_anything_3.utils.export.glb import (
@@ -15,8 +12,11 @@ from depth_anything_3.utils.export.glb import (
     _depths_to_world_points_with_colors,
     _filter_and_downsample,
 )
+import numpy as np
 from PIL import Image
 from pydantic import BaseModel, ConfigDict, TypeAdapter
+import torch
+import tyro
 from webpolicy.base_policy import BasePolicy
 from webpolicy.server import Server
 
@@ -34,17 +34,13 @@ class Config:
     # Model loading
     model_source: str = "huggingface"  # "huggingface", "repo", or explicit path/model id
     hf_model_id: ModelChoice = ModelChoice.G  # HuggingFace model ID (if using "huggingface" source)
-    device: str | None = (
-        None  # Device to run the model on (e.g., "cuda", "cpu"). If None, auto-select.
-    )
+    device: str | None = None  # Device to run the model on (e.g., "cuda", "cpu"). If None, auto-select.
 
 
 class DA3Payload(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    image: list[
-        np.ndarray | Image.Image | str
-    ]  # List of input images (numpy arrays, PIL Images, or file paths)
+    image: list[np.ndarray | Image.Image | str]  # List of input images (numpy arrays, PIL Images, or file paths)
 
     extrinsics: np.ndarray | None = None  # Camera extrinsics (N, 4, 4)
     intrinsics: np.ndarray | None = None  # Camera intrinsics (N, 3, 3)
@@ -61,17 +57,11 @@ class DA3Payload(BaseModel):
 
     export_dir: str | Path | None = None  # Directory to export results
     export_format: str = "mini_npz"  # Export format (mini_npz, npz, glb, ply, gs, gs_video)
-    export_feat_layers: Sequence[int] | None = (
-        None  # Layer indices to export intermediate features from
-    )
+    export_feat_layers: Sequence[int] | None = None  # Layer indices to export intermediate features from
 
     # GLB export parameters
-    conf_thresh_percentile: float = (
-        40.0  # [GLB] Lower percentile for adaptive confidence threshold (default: 40.0)
-    )
-    num_max_points: int = (
-        1_000_000  # [GLB] Maximum number of points in the point cloud (default: 1,000,000)
-    )
+    conf_thresh_percentile: float = 40.0  # [GLB] Lower percentile for adaptive confidence threshold (default: 40.0)
+    num_max_points: int = 1_000_000  # [GLB] Maximum number of points in the point cloud (default: 1,000,000)
     show_cameras: bool = True  # [GLB] Show camera wireframes in the exported scene (default: True)
 
     # Feat_vis export parameters
@@ -142,9 +132,7 @@ class DA3Policy(BasePolicy):
 
         # 5) Based on first camera orientation + glTF axis system, center by point cloud,
         # construct alignment transform, and apply to point cloud
-        _compute_alignment_transform_first_cam_glTF_center_by_points(
-            prediction.extrinsics[0], points
-        )  # (4,4)
+        _compute_alignment_transform_first_cam_glTF_center_by_points(prediction.extrinsics[0], points)  # (4,4)
 
         # if points.shape[0] > 0:
         # points = trimesh.transform_points(points, A)

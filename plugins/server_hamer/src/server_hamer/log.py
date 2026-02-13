@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import logging
+from typing import ClassVar
 
 import colorama
 from colorama import Fore, Style
@@ -7,7 +10,7 @@ from colorama import Fore, Style
 class ColoredFormatter(logging.Formatter):
     """Custom formatter to add colors based on log level."""
 
-    LOG_COLORS = {
+    LOG_COLORS: ClassVar[dict] = {
         logging.DEBUG: Fore.BLUE,
         logging.INFO: Fore.GREEN,
         logging.WARNING: Fore.YELLOW,

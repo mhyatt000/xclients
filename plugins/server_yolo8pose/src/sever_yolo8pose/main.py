@@ -4,9 +4,9 @@ from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
+from rich import print
 import torch
 import tyro
-from rich import print
 from ultralytics import YOLO
 from ultralytics.engine.results import Results
 from webpolicy.base_policy import BasePolicy
@@ -54,12 +54,8 @@ class Y8Payload:
         return Y8Payload(
             # boxes=boxes.xyxy.cpu().numpy() if boxes is not None else np.empty((0, 4)),
             scores=boxes.conf.cpu().numpy() if boxes is not None else np.empty((0,)),
-            class_ids=boxes.cls.cpu().numpy().astype(int)
-            if boxes is not None
-            else np.empty((0,), dtype=int),
-            keypoints=keypoints.xyn.cpu().numpy()
-            if keypoints is not None
-            else np.empty((0, 17, 3)),
+            class_ids=boxes.cls.cpu().numpy().astype(int) if boxes is not None else np.empty((0,), dtype=int),
+            keypoints=keypoints.xyn.cpu().numpy() if keypoints is not None else np.empty((0, 17, 3)),
         )
 
 

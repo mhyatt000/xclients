@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import importlib
 import os
 
@@ -6,15 +8,15 @@ import jax
 import numpy as np
 import pytorch_kinematics as pk
 import rich
-import rich.progress
-import torch
-import tyro
 from rich import print
+import rich.progress
 from roboreg.losses import soft_dice_loss
 from roboreg.util import mask_distance_transform, mask_exponential_decay, overlay_mask
 from roboreg.util.factories import create_robot_scene
+import torch
+import tyro
 
-from server_roboreg.common import REGISTRATION_MODE, DRConfig, HydraConfig
+from server_roboreg.common import DRConfig, HydraConfig, REGISTRATION_MODE
 from server_roboreg.render import Renderer, RendererConfig
 
 
@@ -26,11 +28,7 @@ class DR:
         os.environ["MAX_JOBS"] = str(cfg.max_jobs)  # limit number of concurrent jobs
         mode = cfg.mode
 
-        self.modefn = (
-            mask_distance_transform
-            if mode == REGISTRATION_MODE.DISTANCE_FUNCTION
-            else mask_exponential_decay
-        )
+        self.modefn = mask_distance_transform if mode == REGISTRATION_MODE.DISTANCE_FUNCTION else mask_exponential_decay
         self.r = None
 
     def validate(self, payload: dict):
@@ -45,9 +43,7 @@ class DR:
             raise ValueError("Masks must be of type np.uint8.")
         if not all(np.all(mask >= 0) and np.all(mask <= 255) for mask in masks):
             raise ValueError("Masks must be in the range [0, 255].")
-        if not all(
-            mask.shape[:2] == image.shape[:2] for mask, image in zip(masks, images, strict=False)
-        ):
+        if not all(mask.shape[:2] == image.shape[:2] for mask, image in zip(masks, images, strict=False)):
             raise ValueError("Mask and image shapes do not match.")
         if not all(mask.ndim == 2 for mask in masks):
             raise ValueError("Masks must be 2D.")
@@ -63,7 +59,7 @@ class DR:
         extrinsics = payload.get("HT")
         print("extrinsics", extrinsics)
 
-        b, h, w = payload["depth"].shape
+        _b, h, w = payload["depth"].shape
         if self.r is None:
             self.r = Renderer(
                 self.hcfg,
@@ -85,9 +81,7 @@ class DR:
             targets = [mask_exponential_decay(mask) for mask in masks]
         else:
             raise ValueError("Invalid registration mode.")
-        targets = torch.tensor(
-            np.array(targets), dtype=torch.float32, device=self.device
-        ).unsqueeze(-1)
+        targets = torch.tensor(np.array(targets), dtype=torch.float32, device=self.device).unsqueeze(-1)
 
         # load extrinsics estimate
         extrinsics = torch.tensor(extrinsics, dtype=torch.float32, device=self.device)
@@ -99,16 +93,12 @@ class DR:
         optimizer = getattr(importlib.import_module("torch.optim"), self.cfg.optimizer)(
             [extrinsics_9d_inv], lr=self.cfg.lr
         )
-        scheduler = torch.optim.lr_scheduler.StepLR(
-            optimizer, step_size=self.cfg.step_size, gamma=self.cfg.gamma
-        )
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=self.cfg.step_size, gamma=self.cfg.gamma)
         best_extrinsics = extrinsics
         best_extrinsics_inv = extrinsics_inv
         best_loss = float("inf")
 
-        for iteration in rich.progress.track(
-            range(1, self.cfg.max_iterations + 1), "Optimizing..."
-        ):
+        for iteration in rich.progress.track(range(1, self.cfg.max_iterations + 1), "Optimizing..."):
             if not extrinsics_9d_inv.requires_grad:
                 raise ValueError("Extrinsics require gradients.")
             if not torch.is_grad_enabled():
@@ -222,12 +212,8 @@ def mono(
     # enable gradient tracking and instantiate optimizer
     extrinsics_9d_inv = pk.matrix44_to_se3_9d(extrinsics_inv)
     extrinsics_9d_inv.requires_grad = True
-    optimizer = getattr(importlib.import_module("torch.optim"), args.optimizer)(
-        [extrinsics_9d_inv], lr=args.lr
-    )
-    scheduler = torch.optim.lr_scheduler.StepLR(
-        optimizer, step_size=args.step_size, gamma=args.gamma
-    )
+    optimizer = getattr(importlib.import_module("torch.optim"), args.optimizer)([extrinsics_9d_inv], lr=args.lr)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=args.step_size, gamma=args.gamma)
     best_extrinsics = extrinsics
     best_extrinsics_inv = extrinsics_inv
     best_loss = float("inf")
