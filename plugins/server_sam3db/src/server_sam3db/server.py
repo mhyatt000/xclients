@@ -9,13 +9,6 @@ from rich import print
 import torch
 from webpolicy.base_policy import BasePolicy
 
-def to_numpy_safe(x):
-    if x is None:
-        return None
-    if torch.is_tensor(x):
-        return x.detach().cpu().numpy()
-    return x
-
 from server_sam3db.patch_import import (
     FOVEstimator,
     HumanDetector,
@@ -25,10 +18,25 @@ from server_sam3db.patch_import import (
     visualize_sample_together,
 )
 
+def to_numpy_safe(x):
+    if x is None:
+        return None
+    if torch.is_tensor(x):
+        return x.detach().cpu().numpy()
+    return x
+
 class Sam3dBodyPolicy(BasePolicy):
-    def __init__(self, root: Path, bbox_thr: float = 0.8):
+    def __init__(self, root: Path | None = None, bbox_thr: float = 0.8):
         self.bbox_thr = bbox_thr
         print("Initializing SAM3D Body server...")
+
+        if root is None:
+            env_root = os.environ.get("SAM3DB_ROOT")
+            if env_root is None:
+                raise ValueError(
+                    "SAM3DB_ROOT environment variable not set and no root provided."
+                )
+            root = Path(env_root)
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
