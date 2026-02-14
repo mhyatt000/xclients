@@ -9,6 +9,13 @@ from rich import print
 import torch
 from webpolicy.base_policy import BasePolicy
 
+def to_numpy_safe(x):
+    if x is None:
+        return None
+    if torch.is_tensor(x):
+        return x.detach().cpu().numpy()
+    return x
+
 from server_sam3db.patch_import import (
     FOVEstimator,
     HumanDetector,
@@ -18,16 +25,9 @@ from server_sam3db.patch_import import (
     visualize_sample_together,
 )
 
-def to_numpy_safe(x):
-    if x is None:
-        return None
-    if torch.is_tensor(x):
-        return x.detach().cpu().numpy()
-    return x
-
-
 class Sam3dBodyPolicy(BasePolicy):
-    def __init__(self,root:Path):
+    def __init__(self, root: Path, bbox_thr: float = 0.8):
+        self.bbox_thr = bbox_thr
         print("Initializing SAM3D Body server...")
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -86,22 +86,32 @@ class Sam3dBodyPolicy(BasePolicy):
         )
         self.faces = self.estimator.faces
 
-        print("Model loaded successfully!")
+        print("SAM3dbody Model loaded successfully!")
 
     def step(self, payload: dict, render: bool = False):
         image = payload["image"]
 
+        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
         outputs = self.estimator.process_one_image(
-            image,
-            bbox_thr=0.8,
+            image_rgb,
+            bbox_thr=self.bbox_thr,
             use_mask=False,
         )
 
+        if outputs is None or len(outputs) == 0:
+            print("No persons detected in image.")
+            return {
+                "render": None,
+                "mesh_3d": None,
+            }
+
         person = outputs[0]
+        print(person.keys())
 
         rendered_img = None
         if render:
-            rendered_img = visualize_sample_together(image, outputs, self.estimator.faces)
+            rendered_img = visualize_sample_together(image_rgb, outputs, self.estimator.faces)
 
             rendered_img = rendered_img.astype(np.uint8)
         
