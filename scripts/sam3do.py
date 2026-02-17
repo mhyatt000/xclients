@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from enum import Enum
 import logging
-from typing import Dict, missing, Union Optional
+from typing import Dict, Union, Optional
 import time
 
 import cv2
@@ -25,7 +25,8 @@ class ImageInput:
     """Configuration for image file input"""
     image_path: Path
 
-@dataclass SAMConfig(Config):
+@dataclass
+class SAMConfig(Config):
     """Config for SAM3 server"""
     host: str = "localhost"
     port: int = 8000
@@ -34,9 +35,9 @@ class ImageInput:
 @dataclass
 class SAM3DoConfig(Config):
     """Config for SAM3Do server"""
+    input_source: Union[CameraInput, ImageInput] = tyro.MISSING
     host: str = "localhost"
     port: int = 8001
-    input_source: Union[CameraInput, ImageInput] = Tyro.MISSING
     show: bool = False
     timeout: float = 60.0  # Timeout for server processing
     sam3: SAMConfig = field(default_factory=SAMConfig)
@@ -92,90 +93,276 @@ def load_image(image_path: Path) -> np.ndarray:
 
 def get_frame(cfg: SAM3DoConfig, cap: Optional[cv2.VideoCapture]) -> np.ndarray:
     """Get a frame from either camera or image file"""
-    if cfg.input_type == InputType.CAMERA:
-        
+     
+    if isinstance(cfg.input_source, CameraInput):
         ret, frame = cap.read()
-        cap.release()
-        if not ret:
-            raise RuntimeError(f"Failed to read frame from camera {cfg.camera_device}")
         return frame
     else:  # InputType.IMAGE
-        if cfg.image_path is None:
-            raise ValueError("image_path must be provided when using IMAGE input type")
-        return load_image(cfg.image_path)
+        return load_image(cfg.input_source.image_path)
+
+import json
+from datetime import datetime
+import numpy as np
+
+def save_results(frame: np.ndarray, output: dict, cfg: SAM3DoConfig, frame_idx: int = 0, mask: np.ndarray = None):
+    """Save visualization and raw data from server output"""
+    
+    # Create output directory
+    output_dir = Path("sam3do_results")
+    output_dir.mkdir(exist_ok=True)
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    result_dir = output_dir / f"result_{timestamp}_{frame_idx}"
+    result_dir.mkdir(exist_ok=True)
+    
+    # Save the original image
+    cv2.imwrite(str(result_dir / "original.png"), frame)
+    
+    # Save SAM3 mask if available
+    if mask is not None:
+        original_shape = mask.shape
+        logging.info(f"Original mask shape: {original_shape}, dtype: {mask.dtype}")
+        
+        # Check for empty mask array first
+        if mask.size == 0 or (mask.ndim == 4 and mask.shape[0] == 0):
+            logging.warning(f"Empty mask array, skipping mask save")
+            mask = None
+        else:
+            # Flatten mask if needed - keep flattening until we get (H, W)
+            while mask.ndim > 2:
+                if mask.shape[0] == 1:
+                    mask = mask[0]  # Remove first dimension if it's 1
+                elif mask.shape[1] == 1:
+                    mask = mask[:, 0]  # Remove second dimension if it's 1
+                else:
+                    mask = mask[0]  # Default: take first element
+            
+            logging.info(f"Processed mask shape: {mask.shape}, dtype: {mask.dtype}, min: {np.min(mask)}, max: {np.max(mask)}")
+            
+            # Normalize mask to 0-255 if needed
+            if mask.dtype == np.float32 or mask.dtype == np.float64:
+                mask_vis = (mask * 255).astype(np.uint8)
+            elif mask.dtype == bool:
+                mask_vis = (mask.astype(np.uint8)) * 255
+            else:
+                mask_vis = mask.astype(np.uint8)
+            
+            cv2.imwrite(str(result_dir / "sam3_mask.png"), mask_vis)
+            
+            # Create masked image (mask multiplied by original)
+            if mask_vis.ndim == 2:
+                # Grayscale mask - expand to 3 channels
+                mask_3channel = np.stack([mask_vis] * 3, axis=-1)
+            else:
+                mask_3channel = mask_vis
+            
+            logging.info(f"Mask_3channel shape: {mask_3channel.shape}, frame shape: {frame.shape}")
+            
+            # Apply mask to original image
+            masked_image = (frame.astype(np.float32) * (mask_3channel.astype(np.float32) / 255.0)).astype(np.uint8)
+            cv2.imwrite(str(result_dir / "masked_image.png"), masked_image)
+            
+            logging.info("Saved SAM3 mask and masked image")
+    
+    # Save pointmap visualization if available
+    if "pointmap" in output:
+        pointmap = output["pointmap"]
+        if pointmap.size > 0:
+            logging.info(f"Pointmap shape: {pointmap.shape}, dtype: {pointmap.dtype}, min: {np.min(pointmap)}, max: {np.max(pointmap)}")
+            
+            # Handle different pointmap shapes
+            if pointmap.ndim == 3:  # (H, W, C)
+                if pointmap.shape[2] == 3:  # RGB
+                    pointmap_vis = (pointmap * 255).astype(np.uint8)
+                    pointmap_vis = cv2.cvtColor(pointmap_vis, cv2.COLOR_RGB2BGR)
+                else:
+                    # If it has more channels, just take first 3
+                    pointmap_vis = (pointmap[..., :3] * 255).astype(np.uint8)
+                    pointmap_vis = cv2.cvtColor(pointmap_vis, cv2.COLOR_RGB2BGR)
+            elif pointmap.ndim == 2:  # Grayscale
+                pointmap_vis = (pointmap * 255).astype(np.uint8)
+            else:
+                logging.warning(f"Unexpected pointmap shape: {pointmap.shape}")
+                pointmap_vis = None
+            
+            if pointmap_vis is not None:
+                cv2.imwrite(str(result_dir / "pointmap.png"), pointmap_vis)
+        else:
+            logging.warning("Empty pointmap, skipping")
+    
+    # Save pointmap colors if available
+    if "pointmap_colors" in output:
+        pointmap_colors = output["pointmap_colors"]
+        logging.info(f"Pointmap colors shape: {pointmap_colors.shape}, dtype: {pointmap_colors.dtype}")
+        
+        if pointmap_colors.ndim == 3 and pointmap_colors.shape[2] == 3:
+            pointmap_colors_vis = (pointmap_colors * 255).astype(np.uint8)
+            pointmap_colors_bgr = cv2.cvtColor(pointmap_colors_vis, cv2.COLOR_RGB2BGR)
+            cv2.imwrite(str(result_dir / "pointmap_colors.png"), pointmap_colors_bgr)
+    
+    # Save overlay with 6D rotation visualization
+    overlay = frame.copy()
+    y_offset = 30
+    
+    if "rotation" in output:
+        rotation = output["rotation"]
+        logging.info(f"Rotation shape: {rotation.shape}, value: {rotation}")
+        cv2.putText(overlay, f"Rotation: {rotation.flatten()[:4]}", (10, y_offset),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+        y_offset += 30
+    
+    if "6drotation_normalized" in output:
+        rotation_6d = output["6drotation_normalized"]
+        logging.info(f"6D Rotation shape: {rotation_6d.shape}, value: {rotation_6d}")
+        cv2.putText(overlay, f"6D Rot: {rotation_6d.flatten()[:6]}", (10, y_offset),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+        y_offset += 30
+    
+    if "translation" in output:
+        translation = output["translation"]
+        logging.info(f"Translation shape: {translation.shape}, value: {translation}")
+        cv2.putText(overlay, f"Trans: {translation.flatten()}", (10, y_offset),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+        y_offset += 30
+    
+    if "scale" in output:
+        scale = output["scale"]
+        logging.info(f"Scale shape: {scale.shape}, value: {scale}")
+        cv2.putText(overlay, f"Scale: {scale.flatten()}", (10, y_offset),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+    
+    cv2.imwrite(str(result_dir / "overlay.png"), overlay)
+    
+    # Save raw data as JSON
+    data_to_save = {}
+    for key, value in output.items():
+        if isinstance(value, np.ndarray):
+            data_to_save[key] = {
+                "shape": list(value.shape),
+                "dtype": str(value.dtype),
+                "data": value.tolist() if value.size < 1000 else "too large to save"
+            }
+        else:
+            data_to_save[key] = str(value)
+    
+    with open(result_dir / "output.json", "w") as f:
+        json.dump(data_to_save, f, indent=2)
+    
+    logging.info(f"Saved results to {result_dir}")
+    return result_dir
 
 def main(cfg: SAM3DoConfig) -> None:
-    # Create clients with extended timeouts
+    """Create clients with extended timeout and run inference loop"""
+    import cv2
+    
     sam3do_client = CustomClient(cfg.host, cfg.port, timeout=cfg.timeout + 30)
     sam3_client = CustomClient(cfg.sam3.host, cfg.sam3.port, timeout=30.0)
-   
+
     cap: Optional[cv2.VideoCapture] = None
     if isinstance(cfg.input_source, CameraInput):
         cap = cv2.VideoCapture(cfg.input_source.device)
 
+    frame_idx = 0
     logging.info("Starting SAM3Do orchestration")
     
     while True:
-        try:
-            # Get frame from input source
-            frame = get_frame(cfg, cap)
-            
-            # Send to SAM3 first
-            sam3_payload = {
-                "image": frame,
-                "type": "image",
-                "text": cfg.sam3.prompt,
-            }
-            logging.info(f"Sending to SAM3...")
-            sam3_out = sam3_client.step(sam3_payload)
-            
-            if not sam3_out:
-                logging.error("Failed to get response from SAM3")
-                continue
-            
-            logging.info(f"SAM3 output received")
-            
-            # Send to SAM3Do with timeout parameter
-            sam3do_payload = {
-                "image": frame,
-                "mask": frame[..., 0],
-                "type": "image",
-                "timeout": cfg.timeout,  # Pass timeout to server
-            }
-            logging.info(f"Sending to SAM3Do with server timeout={cfg.timeout}s...")
-            sam3do_out = sam3do_client.step(sam3do_payload)
-            
-            if not sam3do_out:
-                logging.error("Failed to read from SAM3Do")
-                continue
-            
-            logging.info(f"SAM3Do processing complete")
-            logging.info(f"SAM3Do output keys: {sam3do_out.keys()}")
-            
-            # Log the results
-            for key, value in sam3do_out.items():
-                if isinstance(value, dict) and 'shape' in value:
-                    logging.info(f"  {key}: shape={value['shape']}, dtype={value['dtype']}")
-                elif isinstance(value, (int, float, str)):
-                    logging.info(f"  {key}: {value}")
-                else:
-                    logging.info(f"  {key}: {type(value)}")
-            
-            # Display if needed
-            if cfg.show:
-                cv2.imshow("Input Frame", frame)
-                if cfg.input_type == InputType.IMAGE:
-                    cv2.waitKey(0)
-                    break
-                elif cv2.waitKey(1) & 0xFF == ord("q"):
-                    break
-                
-        except Exception as e:
-            logging.error(f"Error: {e}")
-            if cfg.input_type == InputType.IMAGE:
-                break
+        # Get frame from input source
+        frame = get_frame(cfg, cap)
+        
+        # Send to SAM3 first
+        sam3_payload = {
+            "image": frame,
+            "type": "image",
+            "text": cfg.sam3.prompt,
+        }
+        logging.info(f"Sending to SAM3...")
+        sam3_out = sam3_client.step(sam3_payload)
+        print(sam3_out["masks"].shape)
+        print(sam3_out["masks"].dtype)
+        if not sam3_out:
+            logging.error("No output received from SAM3 server")
             continue
-    
+        
+        logging.info(f"Received output from SAM3: {sam3_out.keys()}")
+        
+        # Extract mask from SAM3 output
+        mask = None
+        if "masks" in sam3_out:
+            masks = sam3_out["masks"]
+            logging.info(f"SAM3 masks shape: {masks.shape}, dtype: {masks.dtype}")
+            
+            # Check if masks array is empty
+            if masks.shape[0] == 0:
+                logging.warning("SAM3 detected no masks for the prompt, using full white mask")
+                mask = np.ones((frame.shape[0], frame.shape[1]), dtype=np.uint8) * 255
+            else:
+                # Flatten mask to 2D (H, W)
+                if masks.ndim == 4:  # (N, 1, H, W)
+                    mask = masks[0, 0]  # Take first mask, first channel
+                elif masks.ndim == 3:  # (N, H, W)
+                    mask = masks[0]  # Use first mask
+                else:  # (H, W)
+                    mask = masks
+                
+                # Convert boolean mask to uint8 (0 or 255)
+                if mask.dtype == bool:
+                    mask = (mask.astype(np.uint8)) * 255
+                else:
+                    mask = mask.astype(np.uint8)
+                
+                # Dilate mask to fill small holes and create more points for SAM3Do
+                kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+                mask = cv2.dilate(mask, kernel, iterations=2)
+                print("Dilated mask shape:", mask.shape)
+                print("Dilated mask dtype:", mask.dtype)
+                logging.info(f"Selected mask shape: {mask.shape}, dtype: {mask.dtype}")
+        else:
+            logging.warning("No masks in SAM3 output, using full white mask")
+            mask = np.ones((frame.shape[0], frame.shape[1]), dtype=np.uint8) * 255
+        
+        # Send to SAM3Do with timeout parameter
+        sam3do_payload = {
+            "image": frame,
+            "mask": mask,
+            "type": "image",
+            "timeout": cfg.timeout,
+        }
+        logging.info(f"Sending to SAM3Do with server timeout={cfg.timeout}s...")
+        sam3do_out = sam3do_client.step(sam3do_payload)
+        
+        if not sam3do_out:
+            logging.error("No output received from SAM3Do server")
+            continue
+        
+        logging.info(f"Received output from SAM3Do: {sam3do_out.keys()}")
+        
+        # Save results
+        results_dir = save_results(frame, sam3do_out, cfg, frame_idx, mask=mask)
+        
+        # Log the results
+        for key, value in sam3do_out.items():
+            if isinstance(value, dict) and 'shape' in value:
+                logging.info(f"  {key}: shape={value['shape']}, dtype={value['dtype']}")
+            elif isinstance(value, np.ndarray):
+                logging.info(f"  {key}: shape={value.shape}, dtype={value.dtype}")
+            elif isinstance(value, (int, float, str)):
+                logging.info(f"  {key}: {value}")
+            else:
+                logging.info(f"  {key}: {type(value)}")
+        
+        # Display if needed
+        if cfg.show:
+            cv2.imshow("Input Frame", frame)
+            if isinstance(cfg.input_source, ImageInput):
+                cv2.waitKey(0)
+                break
+            elif cv2.waitKey(1) & 0xFF == ord("q"):
+                break
+        
+        frame_idx += 1
+
+    if cap is not None:
+        cap.release()
     cv2.destroyAllWindows()
 
 if __name__ == "__main__":
