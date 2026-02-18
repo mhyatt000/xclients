@@ -14,6 +14,7 @@ import websockets.sync.client
 from webpolicy.client import Client
 from webpolicy import msgpack_numpy
 
+from xclients.renderer import Renderer
 from xclients.core.cfg import Config, spec
 
 
@@ -200,13 +201,15 @@ def save_results(frame: np.ndarray, output: dict, cfg: SAM3DoConfig, frame_idx: 
         cv2.putText(overlay, f"Rotation: {rotation.flatten()[:4]}", (10, y_offset),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
         y_offset += 30
-    
+        print(f"Rotation: {output['rotation']}")
+
     if "6drotation_normalized" in output:
         rotation_6d = output["6drotation_normalized"]
         logging.info(f"6D Rotation shape: {rotation_6d.shape}, value: {rotation_6d}")
         cv2.putText(overlay, f"6D Rot: {rotation_6d.flatten()[:6]}", (10, y_offset),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
         y_offset += 30
+        print(f"6D Rotation: {output['6drotation_normalized']}")
     
     if "translation" in output:
         translation = output["translation"]
@@ -214,12 +217,14 @@ def save_results(frame: np.ndarray, output: dict, cfg: SAM3DoConfig, frame_idx: 
         cv2.putText(overlay, f"Trans: {translation.flatten()}", (10, y_offset),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
         y_offset += 30
+        print(f"Translation: {output['translation']}")
     
     if "scale" in output:
         scale = output["scale"]
         logging.info(f"Scale shape: {scale.shape}, value: {scale}")
         cv2.putText(overlay, f"Scale: {scale.flatten()}", (10, y_offset),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+        print(f"Scale: {output['scale']}")
     
     cv2.imwrite(str(result_dir / "overlay.png"), overlay)
     
@@ -240,6 +245,89 @@ def save_results(frame: np.ndarray, output: dict, cfg: SAM3DoConfig, frame_idx: 
     
     logging.info(f"Saved results to {result_dir}")
     return result_dir
+
+def render_sam3do_output(renderer, frame, sam3do_out, results_dir, frame_idx, cfg):
+    """Render SAM3Do mesh output on frame"""
+    try:
+        # Extract mesh data
+        if "mesh" not in sam3do_out:
+            logging.warning("No mesh in SAM3Do output, skipping rendering")
+            return
+        
+        mesh_list = sam3do_out["mesh"]
+        if not mesh_list or len(mesh_list) == 0:
+            logging.warning("Mesh list is empty")
+            return
+        
+        mesh_result = mesh_list[0]  # Get first mesh result
+        logging.info(f"Mesh type: {type(mesh_result)}")
+        
+        # Extract vertices and faces from MeshExtractResult
+        if hasattr(mesh_result, 'vertices') and hasattr(mesh_result, 'faces'):
+            vertices = mesh_result.vertices
+            faces = mesh_result.faces
+            
+            # Convert to numpy if needed
+            if hasattr(vertices, 'cpu'):
+                vertices = vertices.cpu().numpy()
+            else:
+                vertices = np.array(vertices)
+            
+            if hasattr(faces, 'cpu'):
+                faces = faces.cpu().numpy()
+            else:
+                faces = np.array(faces)
+        else:
+            logging.error(f"MeshExtractResult doesn't have expected attributes. Available: {dir(mesh_result)}")
+            return
+        
+        # Set renderer faces
+        renderer.faces = faces
+        
+        # Extract transformation parameters
+        translation = np.array(sam3do_out["translation"]["value"][0]).astype(np.float32)
+        scale_val = np.array(sam3do_out["scale"]["value"][0][0]).astype(np.float32)
+        
+        logging.info(f"Mesh: vertices {vertices.shape}, faces {faces.shape}")
+        logging.info(f"Transform: translation {translation}, scale {scale_val}")
+        
+        # Apply scale to vertices
+        vertices_scaled = vertices * scale_val
+        
+        # Render mesh on original frame
+        rendered_img = renderer(
+            vertices=vertices_scaled,
+            cam_t=translation,
+            image=frame,
+            mesh_base_color=(1.0, 1.0, 0.9),
+            scene_bg_color=(0, 0, 0),
+            return_rgba=False,
+        )
+        
+        # Also render standalone RGBA view
+        rendered_rgba = renderer.render_rgba(
+            vertices=vertices_scaled,
+            cam_t=translation,
+            rot_angle=0,
+            mesh_base_color=(1.0, 1.0, 0.9),
+            render_res=[640, 480],
+        )
+        
+        # Save results
+        results_dir.mkdir(parents=True, exist_ok=True)
+        cv2.imwrite(str(results_dir / "rendered_on_frame.png"), (rendered_img * 255).astype(np.uint8))
+        cv2.imwrite(str(results_dir / "rendered_rgba.png"), (rendered_rgba * 255).astype(np.uint8))
+        
+        logging.info(f"Saved rendered results to {results_dir}")
+        
+        if cfg.show:
+            cv2.imshow("SAM3Do Rendered", (rendered_img * 255).astype(np.uint8))
+            cv2.imshow("SAM3Do RGBA", (rendered_rgba * 255).astype(np.uint8))
+    
+    except Exception as e:
+        logging.error(f"Rendering failed: {e}", exc_info=True)
+        import traceback
+        traceback.print_exc()
 
 def main(cfg: SAM3DoConfig) -> None:
     """Create clients with extended timeout and run inference loop"""
@@ -307,7 +395,10 @@ def main(cfg: SAM3DoConfig) -> None:
                 logging.info(f"  {key}: {value}")
             else:
                 logging.info(f"  {key}: {type(value)}")
-        
+
+        focal_length = 600  # Adjust based on your camera
+        renderer = Renderer(focal_length=focal_length)
+        render_sam3do_output(Renderer, frame, sam3do_out, results_dir, frame_idx, cfg)
         # Display if needed
         if cfg.show:
             cv2.imshow("Input Frame", frame)
