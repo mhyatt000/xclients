@@ -14,9 +14,7 @@ import cv2
 import numpy as np
 from rich import print
 import tyro
-import websockets.sync.client
 from webpolicy.client import Client
-from webpolicy import msgpack_numpy
 
 from xclients.renderer import Renderer
 from xclients.core.cfg import Config, spec
@@ -51,45 +49,6 @@ class SAM3DoConfig(Config):
     show: bool = False
     timeout: float = 60.0  # Timeout for server processing
     sam3: SAMConfig = field(default_factory=SAMConfig)
-
-class CustomClient(Client):
-    """Extended Client with configurable timeout"""
-    def __init__(self, host: str = "0.0.0.0", port: int = 8000, timeout: float = 120.0) -> None:
-        self._uri = f"ws://{host}:{port}"
-        self._packer = msgpack_numpy.Packer()
-        self._timeout = timeout
-        self._ws, self._server_metadata = self._wait_for_server()
-
-    def _wait_for_server(self):
-        logging.info(f"Waiting for server at {self._uri}...")
-        while True:
-            try:
-                conn = websockets.sync.client.connect(
-                    self._uri,
-                    compression=None,
-                    max_size=None,
-                )
-                metadata = msgpack_numpy.unpackb(conn.recv())
-                return conn, metadata
-            except ConnectionRefusedError:
-                logging.info("Still waiting for server...")
-                time.sleep(5)
-
-    def step(self, obs: Dict) -> Dict:
-        """Override step to add custom timeout handling"""
-        data = self._packer.pack(obs)
-        self._ws.send(data)
-        
-        # Set a socket timeout for recv()
-        self._ws.socket.settimeout(self._timeout)
-        
-        try:
-            response = self._ws.recv()
-            if isinstance(response, str):
-                raise RuntimeError(f"Error in inference server:\n{response}")
-            return msgpack_numpy.unpackb(response)
-        except TimeoutError:
-            raise TimeoutError(f"Server did not respond within {self._timeout} seconds")
 
 def load_image(image_path: Path) -> np.ndarray:
     """Load image from file"""
@@ -463,14 +422,14 @@ def main(cfg: SAM3DoConfig) -> None:
     import cv2
     from datetime import datetime
     
-    sam3do_client = CustomClient(cfg.host, cfg.port, timeout=cfg.timeout + 30)
-    sam3_client = CustomClient(cfg.sam3.host, cfg.sam3.port, timeout=30.0)
+    sam3do_client = Client(cfg.host, cfg.port)
+    sam3_client = Client(cfg.sam3.host, cfg.sam3.port)
 
     # Initialize renderer ONCE before the loop
     # Use a more appropriate focal length based on image size
     # Typical webcam has FOV ~60-70 degrees, for 640px width: f ≈ width / (2 * tan(FOV/2))
     # For FOV=60°: f ≈ 640 / (2 * tan(30°)) ≈ 554
-    focal_length = 554  # Better default for webcam
+    focal_length = 515
     renderer = Renderer(focal_length=focal_length)
     logging.info(f"Initialized renderer with focal_length={focal_length}")
 
