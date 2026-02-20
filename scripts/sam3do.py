@@ -18,7 +18,7 @@ from webpolicy.client import Client
 
 from xclients.renderer import Renderer
 from xclients.core.cfg import Config, spec
-
+from sam_utils.image_utils import load_image, get_frame
 
 def spec(tree) -> dict:
     return jax.tree.map(lambda x: (x.shape, x.dtype), tree)
@@ -49,25 +49,6 @@ class SAM3DoConfig(Config):
     show: bool = False
     timeout: float = 60.0  # Timeout for server processing
     sam3: SAMConfig = field(default_factory=SAMConfig)
-
-def load_image(image_path: Path) -> np.ndarray:
-    """Load image from file"""
-    if not image_path.exists():
-        raise FileNotFoundError(f"Image file not found: {image_path}")
-    
-    img = cv2.imread(str(image_path))
-    
-    logging.info(f"Loaded image with shape: {img.shape}")
-    return img
-
-def get_frame(cfg: SAM3DoConfig, cap: Optional[cv2.VideoCapture]) -> np.ndarray:
-    """Get a frame from either camera or image file"""
-     
-    if isinstance(cfg.input_source, CameraInput):
-        ret, frame = cap.read()
-        return frame
-    else:  # InputType.IMAGE
-        return load_image(cfg.input_source.image_path)
 
 def save_results(frame: np.ndarray, output: dict, cfg: SAM3DoConfig, frame_idx: int = 0, mask: np.ndarray = None):
     """Save visualization and raw data from server output"""
