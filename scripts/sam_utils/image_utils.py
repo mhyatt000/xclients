@@ -7,7 +7,12 @@ from pathlib import Path
 from typing import Optional
 import cv2
 import numpy as np
+from dataclasses import dataclass
 
+@dataclass
+class CameraInput:
+    """Configuration for camera input."""
+    device: int = 0
 
 def load_image(image_path: Path) -> np.ndarray:
     """Load image from file"""
