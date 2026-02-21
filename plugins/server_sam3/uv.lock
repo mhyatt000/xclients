@@ -3498,7 +3498,7 @@ requires-dist = [
     { name = "matplotlib", marker = "extra == 'notebooks'" },
     { name = "notebook", marker = "extra == 'notebooks'" },
     { name = "numba", marker = "extra == 'dev'" },
-    { name = "numpy", specifier = "==1.26" },
+    { name = "numpy", specifier = ">=1.26,<2" },
     { name = "opencv-python", marker = "extra == 'dev'" },
     { name = "opencv-python", marker = "extra == 'notebooks'" },
     { name = "pandas", marker = "extra == 'dev'" },

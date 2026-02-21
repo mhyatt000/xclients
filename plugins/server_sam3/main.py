@@ -7,15 +7,15 @@ from typing import Annotated, Literal
 from uuid import uuid4
 
 import numpy as np
-from PIL import Image
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
-from sam3.model.sam3_image_processor import Sam3Processor
-from sam3.model_builder import build_sam3_image_model, build_sam3_video_predictor
 import torch
 
 # from transformers import AutoProcessor
 # from transformers import Sam3Processor, Sam3Model
 import tyro
+from PIL import Image
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from sam3.model.sam3_image_processor import Sam3Processor
+from sam3.model_builder import build_sam3_image_model, build_sam3_video_predictor
 from webpolicy.base_policy import BasePolicy
 from webpolicy.server import Server
 
@@ -25,6 +25,7 @@ class Config:
     host: str = "0.0.0.0"
     port: int = 8080
     device: str | None = None
+    confidence: float = 0.5
 
 
 class Schema(BaseModel):
@@ -64,7 +65,7 @@ RequestPayload = Annotated[
 
 
 class Sam3Policy(BasePolicy):
-    def __init__(self, device: str | None = None):
+    def __init__(self, device: str | None = None, confidence: float = 0.5):
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
         self.dtype = torch.bfloat16 if self.device.type == "cuda" else torch.float32
 
@@ -72,7 +73,7 @@ class Sam3Policy(BasePolicy):
             compile=True,
         ).to(self.device)
         self.model.eval()
-        self.confidence = 0.5
+        self.confidence = confidence
         self.processor = Sam3Processor(self.model, confidence_threshold=self.confidence)
 
         # self.model = Sam3Model.from_pretrained("facebook/sam3").to(self.device)
@@ -83,12 +84,12 @@ class Sam3Policy(BasePolicy):
         self._adapter = TypeAdapter(RequestPayload)
         self._streaming_sessions: dict[str, object] = {}
 
-    def reset(self, *args, **kwargs) -> None:
+    def reset(self, *args, **kwargs) -> None:  # noqa: ANN001, D401
         """Clear any cached streaming sessions."""
 
         self._streaming_sessions.clear()
 
-    def step(self, obs: dict) -> dict:
+    def step(self, obs: dict) -> dict:  # noqa: D401
         """Handle an image, batched video, or streaming request."""
 
         request = self._adapter.validate_python(obs)
@@ -146,7 +147,9 @@ class Sam3Policy(BasePolicy):
             video_storage_device="cpu",
             dtype=self.dtype,
         )
-        inference_session = self.processor.add_text_prompt(inference_session=inference_session, text=request.text)
+        inference_session = self.processor.add_text_prompt(
+            inference_session=inference_session, text=request.text
+        )
 
         session_id = str(uuid4())
         self._streaming_sessions[session_id] = inference_session
@@ -179,7 +182,7 @@ class Sam3Policy(BasePolicy):
 
 
 def main(cfg: Config) -> None:
-    policy = Sam3Policy(cfg.device)
+    policy = Sam3Policy(device=cfg.device, confidence=cfg.confidence)
     server = Server(policy, cfg.host, cfg.port)
     server.serve()
 
