@@ -39,13 +39,14 @@ class KeyboardPolicy(BasePolicy):
         return self.fd is not None
 
     def step(self, _obs: dict | None = None) -> dict[str, bool]:
-        pressed: dict[str, bool] = {}
         while True:
+            pressed: dict[str, bool] = {}
             key = self._read_key()
             if key is None:
                 return pressed
-            logger.info(f"Read key: {key}")
             pressed[key] = True
+            print(pressed)
+            return pressed
 
     def reset(self, *_args: object, **_kwargs: object) -> None:
         return None
@@ -69,8 +70,13 @@ class KeyboardPolicy(BasePolicy):
         if not ch:
             return None
 
+        # [ or ] from up/down/left/right
+        if ch in "[]":
+            return ch + sys.stdin.read(1)
         if ch != "\x1b":
             return ch.lower()
+
+        # is the following needed??
 
         seq = ""
         for _ in range(2):
@@ -78,6 +84,7 @@ class KeyboardPolicy(BasePolicy):
             if not readable:
                 break
             seq += sys.stdin.read(1)
+        # print(seq)
 
         return {
             "[A": "up",
