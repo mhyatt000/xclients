@@ -1,0 +1,13 @@
+[project]
+name = "server-keyboard"
+version = "0.1.0"
+description = "Keyboard input webpolicy server"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "tyro>=0.9.35",
+    "webpolicy",
+]
+
+[tool.uv.sources]
+webpolicy = { git = "https://github.com/mhyatt000/webpolicy" }
