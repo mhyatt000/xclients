@@ -19,6 +19,8 @@ class Viewer:
 
         tx, ty, tz = vec[:3]
         rx, ry = vec[3:5]
+        ry = -ry
+        tz = -tz
 
         img = np.full((self.size, self.size, 3), 255, dtype=np.uint8)
 
@@ -26,30 +28,42 @@ class Viewer:
         radius = self.base_radius * (1.0 + 0.25 * tz)
         radius = max(1.0, min(radius, self.size / 2.0))
 
-        # move circle center with rx/ry up to 10% of image size.
+        # rx/ry specify a stretch direction and magnitude for the radius.
+        stretch_vec = np.array([rx, ry], dtype=float)
+        stretch_mag = float(np.linalg.norm(stretch_vec))
+        stretch_mag_clipped = min(stretch_mag, 1.0)
+        extra_radius = radius * 0.75 * stretch_mag_clipped
+        max_radius = radius + extra_radius
+        if stretch_mag > 1e-6:
+            stretch_dir = stretch_vec / stretch_mag
+        else:
+            stretch_dir = np.array([0.0, 0.0], dtype=float)
+
+        # move circle center with tx/ty up to 10% of image size.
         max_offset = 0.1 * self.size
-        center_y = self.size / 2.0 - rx * max_offset  # +rx moves up
-        center_x = self.size / 2.0 - ry * max_offset  # +ry moves left
-        center_y = float(np.clip(center_y, radius, self.size - radius))
-        center_x = float(np.clip(center_x, radius, self.size - radius))
+        center_y = self.size / 2.0 - tx * max_offset  # +tx moves up
+        center_x = self.size / 2.0 - ty * max_offset  # +ty moves left
+        center_y = float(np.clip(center_y, max_radius, self.size - max_radius))
+        center_x = float(np.clip(center_x, max_radius, self.size - max_radius))
 
-        # draw filled circle (light green)
+        # draw filled circle with directional stretch (light green)
         yy, xx = np.ogrid[: self.size, : self.size]
-        circle_mask = (xx - center_x) ** 2 + (yy - center_y) ** 2 <= radius**2
-        img[circle_mask] = np.array([144, 238, 144], dtype=np.uint8)
+        rel_x = xx - center_x
+        rel_y = yy - center_y
+        dist = np.sqrt(rel_x**2 + rel_y**2)
 
-        # Draw red line showing translation direction (x up/down, y left/right)
-        direction_norm = np.hypot(tx, ty)
-        if direction_norm > 1e-6:
-            dir_y = -tx / direction_norm
-            dir_x = -ty / direction_norm
-            end_y = center_y + dir_y * radius
-            end_x = center_x + dir_x * radius
-            steps = int(max(abs(end_y - center_y), abs(end_x - center_x))) + 1
-            line_ys = np.linspace(center_y, end_y, steps)
-            line_xs = np.linspace(center_x, end_x, steps)
-            line_rows = np.clip(np.rint(line_ys).astype(int), 0, self.size - 1)
-            line_cols = np.clip(np.rint(line_xs).astype(int), 0, self.size - 1)
-            img[line_rows, line_cols] = np.array([255, 0, 0], dtype=np.uint8)
+        if stretch_mag > 1e-6:
+            with np.errstate(invalid="ignore"):
+                zeros = np.zeros_like(dist)
+                unit_x = np.divide(rel_x, dist, out=zeros.copy(), where=dist > 0)
+                unit_y = np.divide(rel_y, dist, out=zeros.copy(), where=dist > 0)
+            alignment = unit_x * stretch_dir[0] + unit_y * stretch_dir[1]
+            alignment = np.clip(alignment, 0.0, 1.0)
+            stretch_radius = radius + extra_radius * alignment
+            mask = dist <= stretch_radius
+        else:
+            mask = dist <= radius
+
+        img[mask] = np.array([144, 238, 144], dtype=np.uint8)
 
         return img

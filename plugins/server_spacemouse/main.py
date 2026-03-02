@@ -24,7 +24,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", default="127.0.0.1", help="Server host")
     parser.add_argument("--port", type=int, default=8000, help="Server port")
-    parser.add_argument("--interval", type=float, default=0.1, help="Polling interval in seconds")
+    parser.add_argument("--interval", type=float, default=0.001, help="Polling interval in seconds")
     parser.add_argument("--count", type=int, default=0, help="Number of polls before exiting (0 = infinite)")
     parser.add_argument("--viewer", action="store_true", help="Display the viewer window for each poll")
     parser.add_argument("--viewer-window", default="SpaceMouse Viewer", help="Window title when rendering")
