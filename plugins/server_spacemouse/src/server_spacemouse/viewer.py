@@ -21,6 +21,8 @@ class Viewer:
         rx, ry = vec[3:5]
         ry = -ry
         tz = -tz
+        tx, ty = ty, tx
+        ty = -ty
 
         img = np.full((self.size, self.size, 3), 255, dtype=np.uint8)
 
@@ -53,17 +55,41 @@ class Viewer:
         dist = np.sqrt(rel_x**2 + rel_y**2)
 
         if stretch_mag > 1e-6:
+            # Build an anisotropic radius field where the radius expands smoothly
+            # only near the stretch direction (theta ~= 0 w.r.t +x along stretch_dir).
             with np.errstate(invalid="ignore"):
                 zeros = np.zeros_like(dist)
                 unit_x = np.divide(rel_x, dist, out=zeros.copy(), where=dist > 0)
                 unit_y = np.divide(rel_y, dist, out=zeros.copy(), where=dist > 0)
-            alignment = unit_x * stretch_dir[0] + unit_y * stretch_dir[1]
-            alignment = np.clip(alignment, 0.0, 1.0)
-            stretch_radius = radius + extra_radius * alignment
+
+            cos_diff = unit_x * stretch_dir[0] + unit_y * stretch_dir[1]
+            cos_diff = np.clip(cos_diff, -1.0, 1.0)
+            angle_diff = np.arccos(cos_diff)
+
+            anisotropic_span = np.deg2rad(45.0)
+            anisotropic_sigma = anisotropic_span / 2.0
+            bump = np.exp(-0.5 * (angle_diff / anisotropic_sigma) ** 2)
+            bump = np.where(angle_diff <= anisotropic_span, bump, 0.0)
+
+            stretch_radius = radius + extra_radius * bump
             mask = dist <= stretch_radius
         else:
             mask = dist <= radius
 
         img[mask] = np.array([144, 238, 144], dtype=np.uint8)
+
+# grey grid on x/y ad 25/50/75% of image width/height
+        grid_color = np.array([200, 200, 200], dtype=np.uint8)
+        for i in range(1, 4):
+            offset = int(i * self.size / 4)
+            img[offset, :] = grid_color
+            img[:, offset] = grid_color
+
+
+# black dot at the center of the circle
+        dot_radius = max(1.0, radius * 0.1)
+        dot_mask = dist <= dot_radius
+        img[dot_mask] = np.array([0, 0, 0], dtype=np.uint8)
+
 
         return img
