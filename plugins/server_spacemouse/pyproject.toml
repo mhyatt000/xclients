@@ -16,3 +16,14 @@ dependencies = [
 
 [tool.uv.sources]
 webpolicy = { git = "https://github.com/mhyatt000/webpolicy" }
+server-spacemouse = { workspace = true, editable = true }
+
+[tool.uv.workspace]
+members = [
+    ".",
+]
+
+[dependency-groups]
+dev = [
+    "server-spacemouse",
+]
