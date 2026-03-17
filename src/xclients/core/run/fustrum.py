@@ -13,6 +13,7 @@ def log_fustrum(cameras: dict[np.array], root: Path, inv: bool = False):
         name = f"{k}"
         entity_path = f"{root / 'cam' / name}"
         camera_frame = entity_path
+        image_plane_frame = f"{entity_path}/image_plane"
         print(name)
 
         extrinsic = cam["extrinsics"]  # 3x4
@@ -46,8 +47,8 @@ def log_fustrum(cameras: dict[np.array], root: Path, inv: bool = False):
                 focal_length=[fx, fy],
                 principal_point=[cx, cy],
                 camera_xyz=rr.ViewCoordinates.RDF,
-                parent_frame=root_frame,
-                child_frame=camera_frame,
+                parent_frame=camera_frame,
+                child_frame=image_plane_frame,
                 image_plane_distance=0.1,
                 color=[255, 128, 0],
                 line_width=0.002,

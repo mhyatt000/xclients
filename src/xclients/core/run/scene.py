@@ -69,6 +69,15 @@ class RerunScene:
         rr.log("/", self.view_coordinates, static=True)
         rr.log(str(self.world_path), rr.CoordinateFrame(frame=str(self.world_path)), static=True)
         rr.log(str(self.world_path), self.view_coordinates, static=True)
+        rr.log(
+            str(self.world_path),
+            rr.Transform3D(
+                translation=[0.0, 0.0, 0.0],
+                quaternion=[0.0, 0.0, 0.0, 1.0],
+                relation=rr.TransformRelation.ChildFromParent,
+            ),
+            static=True,
+        )
         rr.log_file_from_path(self.urdf, entity_path_prefix=self.entity_path_prefix, static=True)
 
         self.urdf_tree = rru.UrdfTree.from_file_path(self.urdf, entity_path_prefix=self.entity_path_prefix)
@@ -104,11 +113,62 @@ class RerunScene:
         static: bool = False,
     ) -> None:
         for cam, frame in frames.items():
+            entity_path = f"{self.world_path}/cam/{cam}/image"
+            rr.log(entity_path, rr.CoordinateFrame(frame=self._image_plane_frame(cam)), static=True)
             rr.log(
-                f"{self.world_path}/cam/{cam}/image",
+                entity_path,
                 rr.Image(frame, color_model="BGR").compress(jpeg_quality=jpeg_quality),
                 static=static,
             )
+
+    def log_points2d(
+        self,
+        camera: str | int,
+        points: np.ndarray,
+        *,
+        colors: np.ndarray | None = None,
+        radii: float | np.ndarray | None = None,
+        labels: Sequence[str] | None = None,
+        path: str | None = None,
+        parent_frame: str | None = None,
+        static: bool = False,
+    ) -> None:
+        entity_path = path or f"{self.world_path}/cam/{camera}/kp2d"
+        rr.log(entity_path, rr.CoordinateFrame(frame=self._image_plane_frame(camera)), static=True)
+        rr.log(
+            entity_path,
+            rr.Points2D(
+                points,
+                colors=colors,
+                radii=radii,
+                labels=labels,
+            ),
+            static=static,
+        )
+
+    def log_points3d(
+        self,
+        points: np.ndarray,
+        *,
+        colors: np.ndarray | None = None,
+        radii: float | np.ndarray | None = None,
+        labels: Sequence[str] | None = None,
+        path: str | None = None,
+        parent_frame: str | None = None,
+        static: bool = False,
+    ) -> None:
+        entity_path = path or f"{self.world_path}/scene/points"
+        rr.log(entity_path, rr.CoordinateFrame(frame=parent_frame or str(self.world_path)), static=True)
+        rr.log(
+            entity_path,
+            rr.Points3D(
+                points,
+                colors=colors,
+                radii=radii,
+                labels=labels,
+            ),
+            static=static,
+        )
 
     def log_joints(
         self,
@@ -163,6 +223,9 @@ class RerunScene:
             }
 
         return calibrations
+
+    def _image_plane_frame(self, camera: str | int) -> str:
+        return f"{self.world_path}/cam/{camera}/image_plane"
 
     def _joint_transform_columns(self):
         translations = []
