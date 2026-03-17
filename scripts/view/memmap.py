@@ -31,16 +31,16 @@ GRIPPER_JOINT_NAMES = (
 
 @dataclass
 class Config:
-    path: Path
-    urdf: Path = Path("xarm7_standalone.urdf")
+    path: Path  # path to memmap directory
+    urdf: Path = Path("xarm7_standalone.urdf")  # path to urdf file
     app_id: str = "memmap_view"
-    cams: list[Path] = field(default_factory=list)
+    cams: list[Path] = field(default_factory=list)  # list of paths to camera extrinsics files
     entity_path_prefix: str = "robot"
     transforms_path: str = "robot/transforms"
     spawn: bool = True
-    rrd_path: Path | None = None
+    rrd_path: Path | None = None  # path to save rerun recording, or None to disable saving
     stream: int | None = None
-    limit: int | None = None
+    limit: int | None = None  # maximum number of records to view, or None for no limit
     realtime: bool = True
     dt: float | None = None
 
@@ -60,6 +60,21 @@ def selected_streams(loader: DataLoader, stream_index: int | None):
     if stream_index < 0 or stream_index >= len(loader.streams):
         raise IndexError(f"stream index {stream_index} is out of range for {len(loader.streams)} streams")
     yield stream_index, loader.streams[stream_index]
+
+
+def gripper_joint_values(scene: RerunScene, gripper: np.ndarray | float) -> dict[str, float]:
+    if (gripper_joint := scene.joint_map.get("drive_joint")) is None:
+        return {}
+
+    gripper_value = float(np.asarray(gripper, dtype=float).reshape(-1)[0])
+    lower = gripper_joint.limit_lower if np.isfinite(gripper_joint.limit_lower) else 0.0
+    upper = gripper_joint.limit_upper if np.isfinite(gripper_joint.limit_upper) else gripper_value
+
+    # Memmap gripper values use the opposite open/closed convention from the URDF drive joint.
+    gripper_value = lower + upper - gripper_value
+    gripper_value = min(max(gripper_value, lower), upper)
+
+    return {name: gripper_value for name in GRIPPER_JOINT_NAMES if name in scene.joint_map}
 
 
 def main(cfg: Config) -> None:
@@ -105,6 +120,27 @@ def main(cfg: Config) -> None:
             if frames:
                 scene.log_camera_images(frames)
 
+            pose = item.get("xarm_pose")
+            if pose is not None:
+                pose_values = np.asarray(pose, dtype=float).reshape(-1)
+                if len(pose_values) >= 3:
+                    position3d = pose_values[:3].reshape(1, 3)
+                    scene.log_points3d(
+                        position3d,
+                        colors=np.array([[255, 64, 64]], dtype=np.uint8),
+                        radii=0.01,
+                        labels=["xarm_pose"],
+                        path=f"{scene.world_path}/scene/xarm_pose_3d",
+                    )
+                    scene.log_points2d(
+                        "low",
+                        position3d[:, :2],
+                        colors=np.array([[255, 64, 64]], dtype=np.uint8),
+                        radii=6.0,
+                        labels=["xarm_pose_xy"],
+                        path=f"{scene.world_path}/cam/low/xarm_pose_2d",
+                    )
+
             arm_joints = item.get("xarm_joints")
             if arm_joints is None:
                 raise KeyError("Expected key 'xarm_joints' in memmap record.")
@@ -120,10 +156,7 @@ def main(cfg: Config) -> None:
 
             gripper = item.get("xarm_gripper")
             if gripper is not None:
-                gripper_value = float(np.asarray(gripper, dtype=float).reshape(-1)[0])
-                for name in GRIPPER_JOINT_NAMES:
-                    if name in scene.joint_map:
-                        joint_values[name] = gripper_value
+                joint_values.update(gripper_joint_values(scene, gripper))
 
             scene.log_joints(joint_values, step=step)
             step += 1
