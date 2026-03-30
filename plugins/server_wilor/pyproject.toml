@@ -1,0 +1,26 @@
+[project]
+name = "server-wilor"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "chumpy",
+    "wilor-mini",
+]
+
+[build-system]
+requires = ["uv_build"]
+build-backend = "uv_build"
+
+[tool.uv]
+override-dependencies = [
+    "chumpy @ git+https://github.com/mhyatt000/chumpy",
+]
+
+[tool.uv.sources]
+chumpy = { git = "https://github.com/mhyatt000/chumpy" }
+wilor-mini = { git = "https://github.com/warmshao/wilor-mini" }
+
+[tool.uv.extra-build-dependencies]
+chumpy = ["pip"]
