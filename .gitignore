@@ -4,6 +4,9 @@ data/
 #yolo
 *.pt
 
+# downloaded demo assets
+plugins/server_wilor/assets/
+
 # hamer
 _DATA
 

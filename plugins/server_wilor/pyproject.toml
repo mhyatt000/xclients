@@ -3,9 +3,11 @@ name = "server-wilor"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.13"
 dependencies = [
     "chumpy",
+    "dill>=0.4.1",
+    "webpolicy",
     "wilor-mini",
 ]
 
@@ -21,6 +23,7 @@ override-dependencies = [
 [tool.uv.sources]
 chumpy = { git = "https://github.com/mhyatt000/chumpy" }
 wilor-mini = { git = "https://github.com/warmshao/wilor-mini" }
+webpolicy = { git = "https://github.com/mhyatt000/webpolicy" }
 
 [tool.uv.extra-build-dependencies]
 chumpy = ["pip"]
