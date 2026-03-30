@@ -142,7 +142,6 @@ class Config:
     dir: str  # path to the directory where the data will be saved
 
     episodes: int = 100  # number of episodes to record
-    seconds: int = 15  # max seconds per episode
     fps: int = 50  # fps of data (not of the cameras)
 
     viz: bool = False  # show the camera images while recording
@@ -156,10 +155,6 @@ class Config:
 
         if not self.cammap:
             logger.error("Please check the camera mapping with camera.py before running this script.")
-
-    @property
-    def nsteps(self):
-        return int(self.seconds * self.fps)
 
 
 def spec(arr):
@@ -267,7 +262,7 @@ def main(cfg: Config):
     print(cams)
     for ep in tqdm(range(cfg.episodes), leave=False):
         frames = {k: [] for k in cams}
-        for step in tqdm(range(cfg.nsteps), leave=False):
+        while pedal.value[0] == 0:
             tic = time.time()
 
             imgs = {k: cam.read()[1] for k, cam in cams.items()}
@@ -283,14 +278,11 @@ def main(cfg: Config):
                 if key == ord("q"):
                     sys.exit(0)
 
-            if pedal.value[0] == 1:
-                pedal.value[0] = 0
-                time.sleep(0.1)
-                break
-
             toc = time.time()
             elapsed = toc - tic
             time.sleep(max(0, dt - elapsed))
+
+        pedal.value[0] = 0
         flush(frames, ep, cfg)
         wait_for_pedal(pedal, cams, True)
 
