@@ -23,8 +23,8 @@ logger = logging.getLogger(__name__)
 
 
 CAM_MAP = {
-    "agent1": 0,
-    "agent2": 2
+    "side": 0,
+    "low": 2
 }
 
 
