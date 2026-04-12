@@ -1,0 +1,18 @@
+[project]
+name = "synth"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "isaacsim==6.0.0.0",
+    "isaacsim-replicator==6.0.0.0",
+    "isaacsim-robot==6.0.0.0",
+]
+
+[tool.uv]
+prerelease = "allow"
+
+[[tool.uv.index]]
+name = "nvidia"
+url = "https://pypi.nvidia.com/simple"
