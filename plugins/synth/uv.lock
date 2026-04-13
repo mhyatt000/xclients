@@ -1870,6 +1870,7 @@ dependencies = [
     { name = "isaacsim" },
     { name = "isaacsim-replicator" },
     { name = "isaacsim-robot" },
+    { name = "urdf-usd-converter" },
 ]
 
 [package.metadata]
@@ -1877,6 +1878,7 @@ requires-dist = [
     { name = "isaacsim", specifier = "==6.0.0.0" },
     { name = "isaacsim-replicator", specifier = "==6.0.0.0" },
     { name = "isaacsim-robot", specifier = "==6.0.0.0" },
+    { name = "urdf-usd-converter", git = "https://github.com/newton-physics/urdf-usd-converter?tag=v0.1.0" },
 ]
 
 [[package]]
@@ -2021,17 +2023,13 @@ wheels = [
 [[package]]
 name = "urdf-usd-converter"
 version = "0.1.0"
-source = { registry = "https://pypi.org/simple" }
+source = { git = "https://github.com/newton-physics/urdf-usd-converter?tag=v0.1.0#2def5a3a229966876a1851931d158b928cca9d8a" }
 dependencies = [
     { name = "newton-usd-schemas" },
     { name = "numpy-stl" },
     { name = "pycollada" },
     { name = "tinyobjloader" },
     { name = "usd-exchange" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/b7/de/01ca72b169e1fb56068aa0a19bfc2d21df56d2ea06535bd00d8424f71c1d/urdf_usd_converter-0.1.0.tar.gz", hash = "sha256:a1732cb9812c5acaa75121c108477032ad4ca37b53c4b8272bf2a3b0fe4f67c1", size = 203881, upload-time = "2026-03-09T23:04:01.85Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/88/1d/4dec33add4b8aa9db070d2f89e21920ee9ef1a7f0ec861d25b42eb148710/urdf_usd_converter-0.1.0-py3-none-any.whl", hash = "sha256:fd17a929a952fea2204757cfc30a874ac446aa7456637fb70b3e5e015cff8755", size = 60606, upload-time = "2026-03-09T23:04:00.447Z" },
 ]
 
 [[package]]
