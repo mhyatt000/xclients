@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import math
 import os
 import random
@@ -56,19 +57,8 @@ def bind_material(prim: Usd.Prim, material: UsdShade.Material) -> None:
     UsdShade.MaterialBindingAPI(prim).Bind(material)
 
 
-def create_stage() -> tuple[Usd.Stage, dict[str, object]]:
-    omni.usd.get_context().new_stage()
-    stage = omni.usd.get_context().get_stage()
-
-    world = UsdGeom.Xform.Define(stage, "/World")
-    stage.SetDefaultPrim(world.GetPrim())
-
+def make_ground_and_backdrop(stage: Usd.Stage) -> tuple[UsdShade.Shader, UsdShade.Shader]:
     UsdGeom.Xform.Define(stage, "/World/Looks")
-
-    cube = UsdGeom.Cube.Define(stage, "/World/Cube")
-    cube.CreateSizeAttr(140.0)
-    cube.AddTranslateOp().Set((0.0, 0.0, 70.0))
-    cube_api = UsdGeom.XformCommonAPI(cube)
 
     ground = UsdGeom.Mesh.Define(stage, "/World/Ground")
     ground.CreatePointsAttr(
@@ -93,13 +83,14 @@ def create_stage() -> tuple[Usd.Stage, dict[str, object]]:
     backdrop.CreateFaceVertexCountsAttr([4])
     backdrop.CreateFaceVertexIndicesAttr([0, 1, 2, 3])
 
-    cube_mat, cube_shader = make_material(stage, "/World/Looks/CubeMat")
     ground_mat, ground_shader = make_material(stage, "/World/Looks/GroundMat")
     backdrop_mat, backdrop_shader = make_material(stage, "/World/Looks/BackdropMat")
-    bind_material(cube.GetPrim(), cube_mat)
     bind_material(ground.GetPrim(), ground_mat)
     bind_material(backdrop.GetPrim(), backdrop_mat)
+    return ground_shader, backdrop_shader
 
+
+def make_lights(stage: Usd.Stage) -> tuple[UsdLux.DomeLight, UsdLux.DistantLight, UsdGeom.XformCommonAPI]:
     dome = UsdLux.DomeLight.Define(stage, "/World/DomeLight")
     dome.CreateIntensityAttr(1500.0)
     dome.CreateColorAttr(Gf.Vec3f(1.0, 1.0, 1.0))
@@ -109,19 +100,72 @@ def create_stage() -> tuple[Usd.Stage, dict[str, object]]:
     sun.CreateColorAttr(Gf.Vec3f(1.0, 1.0, 1.0))
     sun_api = UsdGeom.XformCommonAPI(sun)
     sun_api.SetRotate((315.0, 0.0, 0.0))
+    return dome, sun, sun_api
+
+
+def create_cube_stage() -> tuple[Usd.Stage, dict[str, object]]:
+    omni.usd.get_context().new_stage()
+    stage = omni.usd.get_context().get_stage()
+
+    world = UsdGeom.Xform.Define(stage, "/World")
+    stage.SetDefaultPrim(world.GetPrim())
+
+    cube = UsdGeom.Cube.Define(stage, "/World/Cube")
+    cube.CreateSizeAttr(140.0)
+    cube.AddTranslateOp().Set((0.0, 0.0, 70.0))
+    cube_api = UsdGeom.XformCommonAPI(cube)
+
+    cube_mat, cube_shader = make_material(stage, "/World/Looks/CubeMat")
+    bind_material(cube.GetPrim(), cube_mat)
+    ground_shader, backdrop_shader = make_ground_and_backdrop(stage)
+    dome, sun, sun_api = make_lights(stage)
 
     stage.Save()
     scene = {
+        "mode": "cube",
         "cube": cube,
         "cube_api": cube_api,
-        "cube_path": cube.GetPath(),
-        "cube_shader": cube_shader,
+        "subject_path": cube.GetPath(),
+        "subject_shader": cube_shader,
         "ground_shader": ground_shader,
         "backdrop_shader": backdrop_shader,
         "dome": dome,
         "sun": sun,
         "sun_api": sun_api,
     }
+    return stage, scene
+
+
+def subject_bbox(stage: Usd.Stage, prim_path: Sdf.Path) -> Gf.Range3d:
+    prim = stage.GetPrimAtPath(prim_path)
+    cache = UsdGeom.BBoxCache(Usd.TimeCode.Default(), [UsdGeom.Tokens.default_])
+    bound = cache.ComputeWorldBound(prim)
+    return Gf.Range3d(bound.ComputeAlignedBox().GetMin(), bound.ComputeAlignedBox().GetMax())
+
+
+def create_asset_stage(usd_path: Path) -> tuple[Usd.Stage, dict[str, object]]:
+    omni.usd.get_context().new_stage()
+    stage = omni.usd.get_context().get_stage()
+
+    world = UsdGeom.Xform.Define(stage, "/World")
+    stage.SetDefaultPrim(world.GetPrim())
+
+    asset = UsdGeom.Xform.Define(stage, "/World/Subject")
+    asset.GetPrim().GetReferences().AddReference(os.fspath(usd_path))
+
+    ground_shader, backdrop_shader = make_ground_and_backdrop(stage)
+    dome, sun, sun_api = make_lights(stage)
+
+    scene = {
+        "mode": "asset",
+        "subject_path": asset.GetPath(),
+        "ground_shader": ground_shader,
+        "backdrop_shader": backdrop_shader,
+        "dome": dome,
+        "sun": sun,
+        "sun_api": sun_api,
+    }
+    stage.Save()
     return stage, scene
 
 
@@ -182,8 +226,10 @@ def rand_muted_color(rng: random.Random) -> tuple[float, float, float]:
 
 
 def apply_domain_randomization(scene: dict[str, object], rng: random.Random, view_index: int) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
+    if scene["mode"] != "cube":
+        raise RuntimeError("Cube randomization called for non-cube scene")
     cube_api: UsdGeom.XformCommonAPI = scene["cube_api"]  # type: ignore[assignment]
-    cube_shader: UsdShade.Shader = scene["cube_shader"]  # type: ignore[assignment]
+    cube_shader: UsdShade.Shader = scene["subject_shader"]  # type: ignore[assignment]
     ground_shader: UsdShade.Shader = scene["ground_shader"]  # type: ignore[assignment]
     backdrop_shader: UsdShade.Shader = scene["backdrop_shader"]  # type: ignore[assignment]
     dome: UsdLux.DomeLight = scene["dome"]  # type: ignore[assignment]
@@ -231,27 +277,61 @@ def apply_domain_randomization(scene: dict[str, object], rng: random.Random, vie
     return eye, target
 
 
+def orbit_camera_for_bbox(bbox: Gf.Range3d, view_index: int) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
+    center = (bbox.GetMin() + bbox.GetMax()) / 2.0
+    size = bbox.GetSize()
+    radius = max(size[0], size[1], size[2]) * 2.8
+    height = center[2] + max(size[2] * 1.25, radius * 0.35)
+    theta = math.radians((360.0 * view_index) / VIEW_COUNT)
+    eye = (
+        center[0] + radius * math.cos(theta),
+        center[1] + radius * math.sin(theta),
+        height,
+    )
+    target = (center[0], center[1], center[2])
+    return eye, target
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("usd_path", nargs="?", default=None)
+    return parser.parse_args()
+
+
 def main() -> None:
+    args = parse_args()
     out_dir = Path("renders/cube_views").resolve()
     if out_dir.exists():
         shutil.rmtree(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     print(f"Writing to {out_dir}")
 
-    stage, scene = create_stage()
-    cube_path: Sdf.Path = scene["cube_path"]  # type: ignore[assignment]
+    usd_path = Path(args.usd_path).resolve() if args.usd_path else None
+    if usd_path is not None:
+        if not usd_path.exists():
+            raise FileNotFoundError(usd_path)
+        stage, scene = create_asset_stage(usd_path)
+    else:
+        stage, scene = create_cube_stage()
+
+    subject_path: Sdf.Path = scene["subject_path"]  # type: ignore[assignment]
     viewport = get_active_viewport()
     if viewport is None:
         raise RuntimeError("No active viewport available")
 
-    pump(24)
+    pump(32)
     rng = random.Random(20260413)
+    bbox = subject_bbox(stage, subject_path)
 
     for i in range(VIEW_COUNT):
         image_path = out_dir / f"view_{i}.png"
-        eye, target = apply_domain_randomization(scene, rng, i)
+        if scene["mode"] == "cube":
+            eye, target = apply_domain_randomization(scene, rng, i)
+            bbox = subject_bbox(stage, subject_path)
+        else:
+            eye, target = orbit_camera_for_bbox(bbox, i)
         camera_path = create_camera(stage, eye, target, f"Camera_{i}")
-        frame_cube(viewport, camera_path, cube_path)
+        frame_cube(viewport, camera_path, subject_path)
         if image_path.exists():
             image_path.unlink()
         capture_viewport_to_file(viewport, os.fspath(image_path))
