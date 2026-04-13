@@ -8,10 +8,14 @@ dependencies = [
     "isaacsim==6.0.0.0",
     "isaacsim-replicator==6.0.0.0",
     "isaacsim-robot==6.0.0.0",
+    "urdf-usd-converter",
 ]
 
 [tool.uv]
 prerelease = "allow"
+
+[tool.uv.sources]
+urdf-usd-converter = { git = "https://github.com/newton-physics/urdf-usd-converter" }
 
 [[tool.uv.index]]
 name = "nvidia"
