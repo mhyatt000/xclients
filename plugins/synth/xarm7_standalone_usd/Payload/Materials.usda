@@ -1,0 +1,188 @@
+#usda 1.0
+(
+    customLayerData = {
+        string creator = "URDF USD Converter v0.1.1"
+    }
+    defaultPrim = "UF_ROBOT"
+    kilogramsPerUnit = 1
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "UF_ROBOT"
+{
+    def Scope "Materials"
+    {
+        def Material "White" (
+            prepend references = @./MaterialsLibrary.usdc@</Materials/White>
+        )
+        {
+        }
+
+        def Material "Silver" (
+            prepend references = @./MaterialsLibrary.usdc@</Materials/Silver>
+        )
+        {
+        }
+    }
+
+    over "Geometry"
+    {
+        over "world"
+        {
+            over "link_base"
+            {
+                over "link_base" (
+                    prepend apiSchemas = ["MaterialBindingAPI"]
+                )
+                {
+                    rel material:binding = </UF_ROBOT/Materials/White>
+                }
+
+                over "link1"
+                {
+                    over "link1" (
+                        prepend apiSchemas = ["MaterialBindingAPI"]
+                    )
+                    {
+                        rel material:binding = </UF_ROBOT/Materials/White>
+                    }
+
+                    over "link2"
+                    {
+                        over "link2" (
+                            prepend apiSchemas = ["MaterialBindingAPI"]
+                        )
+                        {
+                            rel material:binding = </UF_ROBOT/Materials/White>
+                        }
+
+                        over "link3"
+                        {
+                            over "link3" (
+                                prepend apiSchemas = ["MaterialBindingAPI"]
+                            )
+                            {
+                                rel material:binding = </UF_ROBOT/Materials/White>
+                            }
+
+                            over "link4"
+                            {
+                                over "link4" (
+                                    prepend apiSchemas = ["MaterialBindingAPI"]
+                                )
+                                {
+                                    rel material:binding = </UF_ROBOT/Materials/White>
+                                }
+
+                                over "link5"
+                                {
+                                    over "link5" (
+                                        prepend apiSchemas = ["MaterialBindingAPI"]
+                                    )
+                                    {
+                                        rel material:binding = </UF_ROBOT/Materials/White>
+                                    }
+
+                                    over "link6"
+                                    {
+                                        over "link6" (
+                                            prepend apiSchemas = ["MaterialBindingAPI"]
+                                        )
+                                        {
+                                            rel material:binding = </UF_ROBOT/Materials/White>
+                                        }
+
+                                        over "link7"
+                                        {
+                                            over "link7" (
+                                                prepend apiSchemas = ["MaterialBindingAPI"]
+                                            )
+                                            {
+                                                rel material:binding = </UF_ROBOT/Materials/Silver>
+                                            }
+
+                                            over "link_eef"
+                                            {
+                                                over "xarm_gripper_base_link"
+                                                {
+                                                    over "base_link" (
+                                                        prepend apiSchemas = ["MaterialBindingAPI"]
+                                                    )
+                                                    {
+                                                        rel material:binding = </UF_ROBOT/Materials/White>
+                                                    }
+
+                                                    over "left_outer_knuckle"
+                                                    {
+                                                        over "left_outer_knuckle" (
+                                                            prepend apiSchemas = ["MaterialBindingAPI"]
+                                                        )
+                                                        {
+                                                            rel material:binding = </UF_ROBOT/Materials/Silver>
+                                                        }
+
+                                                        over "left_finger"
+                                                        {
+                                                            over "left_finger" (
+                                                                prepend apiSchemas = ["MaterialBindingAPI"]
+                                                            )
+                                                            {
+                                                                rel material:binding = </UF_ROBOT/Materials/Silver>
+                                                            }
+                                                        }
+                                                    }
+
+                                                    over "left_inner_knuckle"
+                                                    {
+                                                        over "left_inner_knuckle" (
+                                                            prepend apiSchemas = ["MaterialBindingAPI"]
+                                                        )
+                                                        {
+                                                            rel material:binding = </UF_ROBOT/Materials/Silver>
+                                                        }
+                                                    }
+
+                                                    over "right_outer_knuckle"
+                                                    {
+                                                        over "right_outer_knuckle" (
+                                                            prepend apiSchemas = ["MaterialBindingAPI"]
+                                                        )
+                                                        {
+                                                            rel material:binding = </UF_ROBOT/Materials/Silver>
+                                                        }
+
+                                                        over "right_finger"
+                                                        {
+                                                            over "right_finger" (
+                                                                prepend apiSchemas = ["MaterialBindingAPI"]
+                                                            )
+                                                            {
+                                                                rel material:binding = </UF_ROBOT/Materials/Silver>
+                                                            }
+                                                        }
+                                                    }
+
+                                                    over "right_inner_knuckle"
+                                                    {
+                                                        over "right_inner_knuckle" (
+                                                            prepend apiSchemas = ["MaterialBindingAPI"]
+                                                        )
+                                                        {
+                                                            rel material:binding = </UF_ROBOT/Materials/Silver>
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+

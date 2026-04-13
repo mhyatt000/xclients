@@ -1,0 +1,29 @@
+#usda 1.0
+(
+    customLayerData = {
+        string creator = "URDF USD Converter v0.1.1"
+    }
+    defaultPrim = "UF_ROBOT"
+    kilogramsPerUnit = 1
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "UF_ROBOT" (
+    prepend apiSchemas = ["GeomModelAPI"]
+    assetInfo = {
+        string name = "UF_ROBOT"
+    }
+    kind = "component"
+    prepend payload = @./Payload/Contents.usda@
+)
+{
+    float3[] extentsHint = [(-0.09230981, -0.10690881, -0.041640777), (0.24350001, 0.11900772, 0.6027684), (3.4028235e38, 3.4028235e38, 3.4028235e38), (-3.4028235e38, -3.4028235e38, -3.4028235e38), (3.4028235e38, 3.4028235e38, 3.4028235e38), (-3.4028235e38, -3.4028235e38, -3.4028235e38), (-0.09230981, -0.10690881, -0.041640777), (0.24373075, 0.11900772, 0.6027684)]
+}
+
+def PhysicsScene "PhysicsScene" (
+    prepend payload = @./Payload/Contents.usda@</PhysicsScene>
+)
+{
+}
+

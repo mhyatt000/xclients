@@ -1,0 +1,1717 @@
+#usda 1.0
+(
+    customLayerData = {
+        string creator = "URDF USD Converter v0.1.1"
+    }
+    defaultPrim = "UF_ROBOT"
+    kilogramsPerUnit = 1
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "UF_ROBOT"
+{
+    def Scope "Geometry"
+    {
+        def Xform "world"
+        {
+            def Xform "link_base"
+            {
+                quatf xformOp:orient = (1, 0, 0, 0)
+                float3 xformOp:scale = (1, 1, 1)
+                double3 xformOp:translate = (0, 0, 0)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+                def Mesh "link_base" (
+                    prepend references = @./GeometryLibrary.usdc@</Geometry/link_base>
+                )
+                {
+                    quatf xformOp:orient = (1, 0, 0, 0)
+                    float3 xformOp:scale = (1, 1, 1)
+                    double3 xformOp:translate = (0, 0, 0)
+                    uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                }
+
+                def Mesh "link_base_1" (
+                    displayName = "link_base"
+                    prepend references = @./GeometryLibrary.usdc@</Geometry/link_base>
+                )
+                {
+                    uniform token purpose = "guide"
+                    quatf xformOp:orient = (1, 0, 0, 0)
+                    float3 xformOp:scale = (1, 1, 1)
+                    double3 xformOp:translate = (0, 0, 0)
+                    uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                }
+
+                def Xform "link1"
+                {
+                    quatf xformOp:orient = (1, 0, 0, 0)
+                    float3 xformOp:scale = (1, 1, 1)
+                    double3 xformOp:translate = (0, 0, 0.267)
+                    uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+                    def Mesh "link1" (
+                        prepend references = @./GeometryLibrary.usdc@</Geometry/link1>
+                    )
+                    {
+                        quatf xformOp:orient = (1, 0, 0, 0)
+                        float3 xformOp:scale = (1, 1, 1)
+                        double3 xformOp:translate = (0, 0, 0)
+                        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                    }
+
+                    def Mesh "link1_1" (
+                        displayName = "link1"
+                        prepend references = @./GeometryLibrary.usdc@</Geometry/link1>
+                    )
+                    {
+                        uniform token purpose = "guide"
+                        quatf xformOp:orient = (1, 0, 0, 0)
+                        float3 xformOp:scale = (1, 1, 1)
+                        double3 xformOp:translate = (0, 0, 0)
+                        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                    }
+
+                    def Xform "link2"
+                    {
+                        quatf xformOp:orient = (-0.70710546, 0.7071081, 0, 0)
+                        float3 xformOp:scale = (1, 1, 1)
+                        double3 xformOp:translate = (0, 0, 0)
+                        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+                        def Mesh "link2" (
+                            prepend references = @./GeometryLibrary.usdc@</Geometry/link2>
+                        )
+                        {
+                            quatf xformOp:orient = (1, 0, 0, 0)
+                            float3 xformOp:scale = (1, 1, 1)
+                            double3 xformOp:translate = (0, 0, 0)
+                            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                        }
+
+                        def Mesh "link2_1" (
+                            displayName = "link2"
+                            prepend references = @./GeometryLibrary.usdc@</Geometry/link2>
+                        )
+                        {
+                            uniform token purpose = "guide"
+                            quatf xformOp:orient = (1, 0, 0, 0)
+                            float3 xformOp:scale = (1, 1, 1)
+                            double3 xformOp:translate = (0, 0, 0)
+                            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                        }
+
+                        def Xform "link3"
+                        {
+                            quatf xformOp:orient = (0.70710546, 0.7071081, 0, 0)
+                            float3 xformOp:scale = (1, 1, 1)
+                            double3 xformOp:translate = (0, -0.293, 0)
+                            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+                            def Mesh "link3" (
+                                prepend references = @./GeometryLibrary.usdc@</Geometry/link3>
+                            )
+                            {
+                                quatf xformOp:orient = (1, 0, 0, 0)
+                                float3 xformOp:scale = (1, 1, 1)
+                                double3 xformOp:translate = (0, 0, 0)
+                                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                            }
+
+                            def Mesh "link3_1" (
+                                displayName = "link3"
+                                prepend references = @./GeometryLibrary.usdc@</Geometry/link3>
+                            )
+                            {
+                                uniform token purpose = "guide"
+                                quatf xformOp:orient = (1, 0, 0, 0)
+                                float3 xformOp:scale = (1, 1, 1)
+                                double3 xformOp:translate = (0, 0, 0)
+                                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                            }
+
+                            def Xform "link4"
+                            {
+                                quatf xformOp:orient = (0.70710546, 0.7071081, 0, 0)
+                                float3 xformOp:scale = (1, 1, 1)
+                                double3 xformOp:translate = (0.0525, 0, 0)
+                                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+                                def Mesh "link4" (
+                                    prepend references = @./GeometryLibrary.usdc@</Geometry/link4>
+                                )
+                                {
+                                    quatf xformOp:orient = (1, 0, 0, 0)
+                                    float3 xformOp:scale = (1, 1, 1)
+                                    double3 xformOp:translate = (0, 0, 0)
+                                    uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                                }
+
+                                def Mesh "link4_1" (
+                                    displayName = "link4"
+                                    prepend references = @./GeometryLibrary.usdc@</Geometry/link4>
+                                )
+                                {
+                                    uniform token purpose = "guide"
+                                    quatf xformOp:orient = (1, 0, 0, 0)
+                                    float3 xformOp:scale = (1, 1, 1)
+                                    double3 xformOp:translate = (0, 0, 0)
+                                    uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                                }
+
+                                def Xform "link5"
+                                {
+                                    quatf xformOp:orient = (0.70710546, 0.7071081, 0, 0)
+                                    float3 xformOp:scale = (1, 1, 1)
+                                    double3 xformOp:translate = (0.0775, -0.3425, 0)
+                                    uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+                                    def Mesh "link5" (
+                                        prepend references = @./GeometryLibrary.usdc@</Geometry/link5>
+                                    )
+                                    {
+                                        quatf xformOp:orient = (1, 0, 0, 0)
+                                        float3 xformOp:scale = (1, 1, 1)
+                                        double3 xformOp:translate = (0, 0, 0)
+                                        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                                    }
+
+                                    def Mesh "link5_1" (
+                                        displayName = "link5"
+                                        prepend references = @./GeometryLibrary.usdc@</Geometry/link5>
+                                    )
+                                    {
+                                        uniform token purpose = "guide"
+                                        quatf xformOp:orient = (1, 0, 0, 0)
+                                        float3 xformOp:scale = (1, 1, 1)
+                                        double3 xformOp:translate = (0, 0, 0)
+                                        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                                    }
+
+                                    def Xform "link6"
+                                    {
+                                        quatf xformOp:orient = (0.70710546, 0.7071081, 0, 0)
+                                        float3 xformOp:scale = (1, 1, 1)
+                                        double3 xformOp:translate = (0, 0, 0)
+                                        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+                                        def Mesh "link6" (
+                                            prepend references = @./GeometryLibrary.usdc@</Geometry/link6>
+                                        )
+                                        {
+                                            quatf xformOp:orient = (1, 0, 0, 0)
+                                            float3 xformOp:scale = (1, 1, 1)
+                                            double3 xformOp:translate = (0, 0, 0)
+                                            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                                        }
+
+                                        def Mesh "link6_1" (
+                                            displayName = "link6"
+                                            prepend references = @./GeometryLibrary.usdc@</Geometry/link6>
+                                        )
+                                        {
+                                            uniform token purpose = "guide"
+                                            quatf xformOp:orient = (1, 0, 0, 0)
+                                            float3 xformOp:scale = (1, 1, 1)
+                                            double3 xformOp:translate = (0, 0, 0)
+                                            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                                        }
+
+                                        def Xform "link7"
+                                        {
+                                            quatf xformOp:orient = (-0.70710546, 0.7071081, 0, 0)
+                                            float3 xformOp:scale = (1, 1, 1)
+                                            double3 xformOp:translate = (0.076, 0.097, 0)
+                                            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+                                            def Mesh "link7" (
+                                                prepend references = @./GeometryLibrary.usdc@</Geometry/link7>
+                                            )
+                                            {
+                                                quatf xformOp:orient = (1, 0, 0, 0)
+                                                float3 xformOp:scale = (1, 1, 1)
+                                                double3 xformOp:translate = (0, 0, 0)
+                                                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                                            }
+
+                                            def Mesh "end_tool" (
+                                                prepend references = @./GeometryLibrary.usdc@</Geometry/end_tool>
+                                            )
+                                            {
+                                                uniform token purpose = "guide"
+                                                quatf xformOp:orient = (1, 0, 0, 0)
+                                                float3 xformOp:scale = (1, 1, 1)
+                                                double3 xformOp:translate = (0, 0, 0)
+                                                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                                            }
+
+                                            def Xform "link_eef"
+                                            {
+                                                quatf xformOp:orient = (1, 0, 0, 0)
+                                                float3 xformOp:scale = (1, 1, 1)
+                                                double3 xformOp:translate = (0, 0, 0)
+                                                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+                                                def Xform "xarm_gripper_base_link"
+                                                {
+                                                    quatf xformOp:orient = (1, 0, 0, 0)
+                                                    float3 xformOp:scale = (1, 1, 1)
+                                                    double3 xformOp:translate = (0, 0, 0)
+                                                    uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+                                                    def Mesh "base_link" (
+                                                        prepend references = @./GeometryLibrary.usdc@</Geometry/base_link>
+                                                    )
+                                                    {
+                                                        quatf xformOp:orient = (1, 0, 0, 0)
+                                                        float3 xformOp:scale = (1, 1, 1)
+                                                        double3 xformOp:translate = (0, 0, 0)
+                                                        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                                                    }
+
+                                                    def Mesh "base_link_1" (
+                                                        displayName = "base_link"
+                                                        prepend references = @./GeometryLibrary.usdc@</Geometry/base_link>
+                                                    )
+                                                    {
+                                                        uniform token purpose = "guide"
+                                                        quatf xformOp:orient = (1, 0, 0, 0)
+                                                        float3 xformOp:scale = (1, 1, 1)
+                                                        double3 xformOp:translate = (0, 0, 0)
+                                                        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                                                    }
+
+                                                    def Xform "left_outer_knuckle"
+                                                    {
+                                                        quatf xformOp:orient = (1, 0, 0, 0)
+                                                        float3 xformOp:scale = (1, 1, 1)
+                                                        double3 xformOp:translate = (0, 0.035, 0.059098)
+                                                        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+                                                        def Mesh "left_outer_knuckle" (
+                                                            prepend references = @./GeometryLibrary.usdc@</Geometry/left_outer_knuckle>
+                                                        )
+                                                        {
+                                                            quatf xformOp:orient = (1, 0, 0, 0)
+                                                            float3 xformOp:scale = (1, 1, 1)
+                                                            double3 xformOp:translate = (0, 0, 0)
+                                                            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                                                        }
+
+                                                        def Mesh "left_outer_knuckle_1" (
+                                                            displayName = "left_outer_knuckle"
+                                                            prepend references = @./GeometryLibrary.usdc@</Geometry/left_outer_knuckle>
+                                                        )
+                                                        {
+                                                            uniform token purpose = "guide"
+                                                            quatf xformOp:orient = (1, 0, 0, 0)
+                                                            float3 xformOp:scale = (1, 1, 1)
+                                                            double3 xformOp:translate = (0, 0, 0)
+                                                            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                                                        }
+
+                                                        def Xform "left_finger"
+                                                        {
+                                                            quatf xformOp:orient = (1, 0, 0, 0)
+                                                            float3 xformOp:scale = (1, 1, 1)
+                                                            double3 xformOp:translate = (0, 0.035465, 0.042039)
+                                                            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+                                                            def Mesh "left_finger" (
+                                                                prepend references = @./GeometryLibrary.usdc@</Geometry/left_finger>
+                                                            )
+                                                            {
+                                                                quatf xformOp:orient = (1, 0, 0, 0)
+                                                                float3 xformOp:scale = (1, 1, 1)
+                                                                double3 xformOp:translate = (0, 0, 0)
+                                                                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                                                            }
+
+                                                            def Mesh "left_finger_1" (
+                                                                displayName = "left_finger"
+                                                                prepend references = @./GeometryLibrary.usdc@</Geometry/left_finger>
+                                                            )
+                                                            {
+                                                                uniform token purpose = "guide"
+                                                                quatf xformOp:orient = (1, 0, 0, 0)
+                                                                float3 xformOp:scale = (1, 1, 1)
+                                                                double3 xformOp:translate = (0, 0, 0)
+                                                                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                                                            }
+                                                        }
+                                                    }
+
+                                                    def Xform "left_inner_knuckle"
+                                                    {
+                                                        quatf xformOp:orient = (1, 0, 0, 0)
+                                                        float3 xformOp:scale = (1, 1, 1)
+                                                        double3 xformOp:translate = (0, 0.02, 0.074098)
+                                                        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+                                                        def Mesh "left_inner_knuckle" (
+                                                            prepend references = @./GeometryLibrary.usdc@</Geometry/left_inner_knuckle>
+                                                        )
+                                                        {
+                                                            quatf xformOp:orient = (1, 0, 0, 0)
+                                                            float3 xformOp:scale = (1, 1, 1)
+                                                            double3 xformOp:translate = (0, 0, 0)
+                                                            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                                                        }
+
+                                                        def Mesh "left_inner_knuckle_1" (
+                                                            displayName = "left_inner_knuckle"
+                                                            prepend references = @./GeometryLibrary.usdc@</Geometry/left_inner_knuckle>
+                                                        )
+                                                        {
+                                                            uniform token purpose = "guide"
+                                                            quatf xformOp:orient = (1, 0, 0, 0)
+                                                            float3 xformOp:scale = (1, 1, 1)
+                                                            double3 xformOp:translate = (0, 0, 0)
+                                                            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                                                        }
+                                                    }
+
+                                                    def Xform "right_outer_knuckle"
+                                                    {
+                                                        quatf xformOp:orient = (1, 0, 0, 0)
+                                                        float3 xformOp:scale = (1, 1, 1)
+                                                        double3 xformOp:translate = (0, -0.035, 0.059098)
+                                                        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+                                                        def Mesh "right_outer_knuckle" (
+                                                            prepend references = @./GeometryLibrary.usdc@</Geometry/right_outer_knuckle>
+                                                        )
+                                                        {
+                                                            quatf xformOp:orient = (1, 0, 0, 0)
+                                                            float3 xformOp:scale = (1, 1, 1)
+                                                            double3 xformOp:translate = (0, 0, 0)
+                                                            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                                                        }
+
+                                                        def Mesh "right_outer_knuckle_1" (
+                                                            displayName = "right_outer_knuckle"
+                                                            prepend references = @./GeometryLibrary.usdc@</Geometry/right_outer_knuckle>
+                                                        )
+                                                        {
+                                                            uniform token purpose = "guide"
+                                                            quatf xformOp:orient = (1, 0, 0, 0)
+                                                            float3 xformOp:scale = (1, 1, 1)
+                                                            double3 xformOp:translate = (0, 0, 0)
+                                                            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                                                        }
+
+                                                        def Xform "right_finger"
+                                                        {
+                                                            quatf xformOp:orient = (1, 0, 0, 0)
+                                                            float3 xformOp:scale = (1, 1, 1)
+                                                            double3 xformOp:translate = (0, -0.035465, 0.042039)
+                                                            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+                                                            def Mesh "right_finger" (
+                                                                prepend references = @./GeometryLibrary.usdc@</Geometry/right_finger>
+                                                            )
+                                                            {
+                                                                quatf xformOp:orient = (1, 0, 0, 0)
+                                                                float3 xformOp:scale = (1, 1, 1)
+                                                                double3 xformOp:translate = (0, 0, 0)
+                                                                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                                                            }
+
+                                                            def Mesh "right_finger_1" (
+                                                                displayName = "right_finger"
+                                                                prepend references = @./GeometryLibrary.usdc@</Geometry/right_finger>
+                                                            )
+                                                            {
+                                                                uniform token purpose = "guide"
+                                                                quatf xformOp:orient = (1, 0, 0, 0)
+                                                                float3 xformOp:scale = (1, 1, 1)
+                                                                double3 xformOp:translate = (0, 0, 0)
+                                                                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                                                            }
+                                                        }
+                                                    }
+
+                                                    def Xform "right_inner_knuckle"
+                                                    {
+                                                        quatf xformOp:orient = (1, 0, 0, 0)
+                                                        float3 xformOp:scale = (1, 1, 1)
+                                                        double3 xformOp:translate = (0, -0.02, 0.074098)
+                                                        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+                                                        def Mesh "right_inner_knuckle" (
+                                                            prepend references = @./GeometryLibrary.usdc@</Geometry/right_inner_knuckle>
+                                                        )
+                                                        {
+                                                            quatf xformOp:orient = (1, 0, 0, 0)
+                                                            float3 xformOp:scale = (1, 1, 1)
+                                                            double3 xformOp:translate = (0, 0, 0)
+                                                            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                                                        }
+
+                                                        def Mesh "right_inner_knuckle_1" (
+                                                            displayName = "right_inner_knuckle"
+                                                            prepend references = @./GeometryLibrary.usdc@</Geometry/right_inner_knuckle>
+                                                        )
+                                                        {
+                                                            uniform token purpose = "guide"
+                                                            quatf xformOp:orient = (1, 0, 0, 0)
+                                                            float3 xformOp:scale = (1, 1, 1)
+                                                            double3 xformOp:translate = (0, 0, 0)
+                                                            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                                                        }
+                                                    }
+
+                                                    def Xform "link_tcp"
+                                                    {
+                                                        quatf xformOp:orient = (1, 0, 0, 0)
+                                                        float3 xformOp:scale = (1, 1, 1)
+                                                        double3 xformOp:translate = (0, 0, 0.172)
+                                                        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        def Scope "custom"
+        {
+            def Scope "ros2_control"
+            {
+                custom string urdf:name = "uf_robot_hardware/UFRobotSystemHardware"
+                custom string urdf:type = "system"
+
+                def Scope "hardware"
+                {
+                    def Scope "plugin"
+                    {
+                        custom string urdf:text = "uf_robot_hardware/UFRobotSystemHardware"
+                    }
+
+                    def Scope "param"
+                    {
+                        custom string urdf:name = "hw_ns"
+                        custom string urdf:text = "xarm"
+                    }
+
+                    def Scope "param_1" (
+                        displayName = "param"
+                    )
+                    {
+                        custom string urdf:name = "velocity_control"
+                        custom string urdf:text = "False"
+                    }
+
+                    def Scope "param_2" (
+                        displayName = "param"
+                    )
+                    {
+                        custom string urdf:name = "prefix"
+                        custom string urdf:text = "P"
+                    }
+
+                    def Scope "param_3" (
+                        displayName = "param"
+                    )
+                    {
+                        custom string urdf:name = "robot_ip"
+                        custom string urdf:text = "R"
+                    }
+
+                    def Scope "param_4" (
+                        displayName = "param"
+                    )
+                    {
+                        custom string urdf:name = "report_type"
+                        custom string urdf:text = "normal"
+                    }
+
+                    def Scope "param_5" (
+                        displayName = "param"
+                    )
+                    {
+                        custom string urdf:name = "dof"
+                        custom string urdf:text = "7"
+                    }
+
+                    def Scope "param_6" (
+                        displayName = "param"
+                    )
+                    {
+                        custom string urdf:name = "baud_checkset"
+                        custom string urdf:text = "True"
+                    }
+
+                    def Scope "param_7" (
+                        displayName = "param"
+                    )
+                    {
+                        custom string urdf:name = "default_gripper_baud"
+                        custom string urdf:text = "2000000"
+                    }
+
+                    def Scope "param_8" (
+                        displayName = "param"
+                    )
+                    {
+                        custom string urdf:name = "robot_type"
+                        custom string urdf:text = "xarm"
+                    }
+
+                    def Scope "param_9" (
+                        displayName = "param"
+                    )
+                    {
+                        custom string urdf:name = "add_gripper"
+                        custom string urdf:text = "True"
+                    }
+
+                    def Scope "param_10" (
+                        displayName = "param"
+                    )
+                    {
+                        custom string urdf:name = "add_bio_gripper"
+                        custom string urdf:text = "False"
+                    }
+                }
+
+                def Scope "joint"
+                {
+                    custom string urdf:name = "joint1"
+
+                    def Scope "command_interface"
+                    {
+                        custom string urdf:name = "position"
+
+                        def Scope "param"
+                        {
+                            custom string urdf:name = "min"
+                            custom string urdf:text = "-6.283185307179586"
+                        }
+
+                        def Scope "param_1" (
+                            displayName = "param"
+                        )
+                        {
+                            custom string urdf:name = "max"
+                            custom string urdf:text = "6.283185307179586"
+                        }
+                    }
+
+                    def Scope "command_interface_1" (
+                        displayName = "command_interface"
+                    )
+                    {
+                        custom string urdf:name = "velocity"
+
+                        def Scope "param"
+                        {
+                            custom string urdf:name = "min"
+                            custom string urdf:text = "-3.14"
+                        }
+
+                        def Scope "param_1" (
+                            displayName = "param"
+                        )
+                        {
+                            custom string urdf:name = "max"
+                            custom string urdf:text = "3.14"
+                        }
+                    }
+
+                    def Scope "state_interface"
+                    {
+                        custom string urdf:name = "position"
+                    }
+
+                    def Scope "state_interface_1" (
+                        displayName = "state_interface"
+                    )
+                    {
+                        custom string urdf:name = "velocity"
+                    }
+                }
+
+                def Scope "joint_1" (
+                    displayName = "joint"
+                )
+                {
+                    custom string urdf:name = "joint2"
+
+                    def Scope "command_interface"
+                    {
+                        custom string urdf:name = "position"
+
+                        def Scope "param"
+                        {
+                            custom string urdf:name = "min"
+                            custom string urdf:text = "-2.059"
+                        }
+
+                        def Scope "param_1" (
+                            displayName = "param"
+                        )
+                        {
+                            custom string urdf:name = "max"
+                            custom string urdf:text = "2.0944"
+                        }
+                    }
+
+                    def Scope "command_interface_1" (
+                        displayName = "command_interface"
+                    )
+                    {
+                        custom string urdf:name = "velocity"
+
+                        def Scope "param"
+                        {
+                            custom string urdf:name = "min"
+                            custom string urdf:text = "-3.14"
+                        }
+
+                        def Scope "param_1" (
+                            displayName = "param"
+                        )
+                        {
+                            custom string urdf:name = "max"
+                            custom string urdf:text = "3.14"
+                        }
+                    }
+
+                    def Scope "state_interface"
+                    {
+                        custom string urdf:name = "position"
+                    }
+
+                    def Scope "state_interface_1" (
+                        displayName = "state_interface"
+                    )
+                    {
+                        custom string urdf:name = "velocity"
+                    }
+                }
+
+                def Scope "joint_2" (
+                    displayName = "joint"
+                )
+                {
+                    custom string urdf:name = "joint3"
+
+                    def Scope "command_interface"
+                    {
+                        custom string urdf:name = "position"
+
+                        def Scope "param"
+                        {
+                            custom string urdf:name = "min"
+                            custom string urdf:text = "-6.283185307179586"
+                        }
+
+                        def Scope "param_1" (
+                            displayName = "param"
+                        )
+                        {
+                            custom string urdf:name = "max"
+                            custom string urdf:text = "6.283185307179586"
+                        }
+                    }
+
+                    def Scope "command_interface_1" (
+                        displayName = "command_interface"
+                    )
+                    {
+                        custom string urdf:name = "velocity"
+
+                        def Scope "param"
+                        {
+                            custom string urdf:name = "min"
+                            custom string urdf:text = "-3.14"
+                        }
+
+                        def Scope "param_1" (
+                            displayName = "param"
+                        )
+                        {
+                            custom string urdf:name = "max"
+                            custom string urdf:text = "3.14"
+                        }
+                    }
+
+                    def Scope "state_interface"
+                    {
+                        custom string urdf:name = "position"
+                    }
+
+                    def Scope "state_interface_1" (
+                        displayName = "state_interface"
+                    )
+                    {
+                        custom string urdf:name = "velocity"
+                    }
+                }
+
+                def Scope "joint_3" (
+                    displayName = "joint"
+                )
+                {
+                    custom string urdf:name = "joint4"
+
+                    def Scope "command_interface"
+                    {
+                        custom string urdf:name = "position"
+
+                        def Scope "param"
+                        {
+                            custom string urdf:name = "min"
+                            custom string urdf:text = "-0.19198"
+                        }
+
+                        def Scope "param_1" (
+                            displayName = "param"
+                        )
+                        {
+                            custom string urdf:name = "max"
+                            custom string urdf:text = "3.927"
+                        }
+                    }
+
+                    def Scope "command_interface_1" (
+                        displayName = "command_interface"
+                    )
+                    {
+                        custom string urdf:name = "velocity"
+
+                        def Scope "param"
+                        {
+                            custom string urdf:name = "min"
+                            custom string urdf:text = "-3.14"
+                        }
+
+                        def Scope "param_1" (
+                            displayName = "param"
+                        )
+                        {
+                            custom string urdf:name = "max"
+                            custom string urdf:text = "3.14"
+                        }
+                    }
+
+                    def Scope "state_interface"
+                    {
+                        custom string urdf:name = "position"
+                    }
+
+                    def Scope "state_interface_1" (
+                        displayName = "state_interface"
+                    )
+                    {
+                        custom string urdf:name = "velocity"
+                    }
+                }
+
+                def Scope "joint_4" (
+                    displayName = "joint"
+                )
+                {
+                    custom string urdf:name = "joint5"
+
+                    def Scope "command_interface"
+                    {
+                        custom string urdf:name = "position"
+
+                        def Scope "param"
+                        {
+                            custom string urdf:name = "min"
+                            custom string urdf:text = "-6.283185307179586"
+                        }
+
+                        def Scope "param_1" (
+                            displayName = "param"
+                        )
+                        {
+                            custom string urdf:name = "max"
+                            custom string urdf:text = "6.283185307179586"
+                        }
+                    }
+
+                    def Scope "command_interface_1" (
+                        displayName = "command_interface"
+                    )
+                    {
+                        custom string urdf:name = "velocity"
+
+                        def Scope "param"
+                        {
+                            custom string urdf:name = "min"
+                            custom string urdf:text = "-3.14"
+                        }
+
+                        def Scope "param_1" (
+                            displayName = "param"
+                        )
+                        {
+                            custom string urdf:name = "max"
+                            custom string urdf:text = "3.14"
+                        }
+                    }
+
+                    def Scope "state_interface"
+                    {
+                        custom string urdf:name = "position"
+                    }
+
+                    def Scope "state_interface_1" (
+                        displayName = "state_interface"
+                    )
+                    {
+                        custom string urdf:name = "velocity"
+                    }
+                }
+
+                def Scope "joint_5" (
+                    displayName = "joint"
+                )
+                {
+                    custom string urdf:name = "joint6"
+
+                    def Scope "command_interface"
+                    {
+                        custom string urdf:name = "position"
+
+                        def Scope "param"
+                        {
+                            custom string urdf:name = "min"
+                            custom string urdf:text = "-1.69297"
+                        }
+
+                        def Scope "param_1" (
+                            displayName = "param"
+                        )
+                        {
+                            custom string urdf:name = "max"
+                            custom string urdf:text = "3.141592653589793"
+                        }
+                    }
+
+                    def Scope "command_interface_1" (
+                        displayName = "command_interface"
+                    )
+                    {
+                        custom string urdf:name = "velocity"
+
+                        def Scope "param"
+                        {
+                            custom string urdf:name = "min"
+                            custom string urdf:text = "-3.14"
+                        }
+
+                        def Scope "param_1" (
+                            displayName = "param"
+                        )
+                        {
+                            custom string urdf:name = "max"
+                            custom string urdf:text = "3.14"
+                        }
+                    }
+
+                    def Scope "state_interface"
+                    {
+                        custom string urdf:name = "position"
+                    }
+
+                    def Scope "state_interface_1" (
+                        displayName = "state_interface"
+                    )
+                    {
+                        custom string urdf:name = "velocity"
+                    }
+                }
+
+                def Scope "joint_6" (
+                    displayName = "joint"
+                )
+                {
+                    custom string urdf:name = "joint7"
+
+                    def Scope "command_interface"
+                    {
+                        custom string urdf:name = "position"
+
+                        def Scope "param"
+                        {
+                            custom string urdf:name = "min"
+                            custom string urdf:text = "-6.283185307179586"
+                        }
+
+                        def Scope "param_1" (
+                            displayName = "param"
+                        )
+                        {
+                            custom string urdf:name = "max"
+                            custom string urdf:text = "6.283185307179586"
+                        }
+                    }
+
+                    def Scope "command_interface_1" (
+                        displayName = "command_interface"
+                    )
+                    {
+                        custom string urdf:name = "velocity"
+
+                        def Scope "param"
+                        {
+                            custom string urdf:name = "min"
+                            custom string urdf:text = "-3.14"
+                        }
+
+                        def Scope "param_1" (
+                            displayName = "param"
+                        )
+                        {
+                            custom string urdf:name = "max"
+                            custom string urdf:text = "3.14"
+                        }
+                    }
+
+                    def Scope "state_interface"
+                    {
+                        custom string urdf:name = "position"
+                    }
+
+                    def Scope "state_interface_1" (
+                        displayName = "state_interface"
+                    )
+                    {
+                        custom string urdf:name = "velocity"
+                    }
+                }
+            }
+
+            def Scope "transmission"
+            {
+                custom string urdf:name = "tran1"
+
+                def Scope "type"
+                {
+                    custom string urdf:text = "transmission_interface/SimpleTransmission"
+                }
+
+                def Scope "joint"
+                {
+                    custom string urdf:name = "joint1"
+
+                    def Scope "hardwareInterface"
+                    {
+                        custom string urdf:text = "hardware_interface/PositionJointInterface"
+                    }
+                }
+
+                def Scope "actuator"
+                {
+                    custom string urdf:name = "motor1"
+
+                    def Scope "hardwareInterface"
+                    {
+                        custom string urdf:text = "hardware_interface/PositionJointInterface"
+                    }
+
+                    def Scope "mechanicalReduction"
+                    {
+                        custom string urdf:text = "100"
+                    }
+                }
+            }
+
+            def Scope "transmission_1" (
+                displayName = "transmission"
+            )
+            {
+                custom string urdf:name = "tran2"
+
+                def Scope "type"
+                {
+                    custom string urdf:text = "transmission_interface/SimpleTransmission"
+                }
+
+                def Scope "joint"
+                {
+                    custom string urdf:name = "joint2"
+
+                    def Scope "hardwareInterface"
+                    {
+                        custom string urdf:text = "hardware_interface/PositionJointInterface"
+                    }
+                }
+
+                def Scope "actuator"
+                {
+                    custom string urdf:name = "motor2"
+
+                    def Scope "hardwareInterface"
+                    {
+                        custom string urdf:text = "hardware_interface/PositionJointInterface"
+                    }
+
+                    def Scope "mechanicalReduction"
+                    {
+                        custom string urdf:text = "100"
+                    }
+                }
+            }
+
+            def Scope "transmission_2" (
+                displayName = "transmission"
+            )
+            {
+                custom string urdf:name = "tran3"
+
+                def Scope "type"
+                {
+                    custom string urdf:text = "transmission_interface/SimpleTransmission"
+                }
+
+                def Scope "joint"
+                {
+                    custom string urdf:name = "joint3"
+
+                    def Scope "hardwareInterface"
+                    {
+                        custom string urdf:text = "hardware_interface/PositionJointInterface"
+                    }
+                }
+
+                def Scope "actuator"
+                {
+                    custom string urdf:name = "motor3"
+
+                    def Scope "hardwareInterface"
+                    {
+                        custom string urdf:text = "hardware_interface/PositionJointInterface"
+                    }
+
+                    def Scope "mechanicalReduction"
+                    {
+                        custom string urdf:text = "100"
+                    }
+                }
+            }
+
+            def Scope "transmission_3" (
+                displayName = "transmission"
+            )
+            {
+                custom string urdf:name = "tran4"
+
+                def Scope "type"
+                {
+                    custom string urdf:text = "transmission_interface/SimpleTransmission"
+                }
+
+                def Scope "joint"
+                {
+                    custom string urdf:name = "joint4"
+
+                    def Scope "hardwareInterface"
+                    {
+                        custom string urdf:text = "hardware_interface/PositionJointInterface"
+                    }
+                }
+
+                def Scope "actuator"
+                {
+                    custom string urdf:name = "motor4"
+
+                    def Scope "hardwareInterface"
+                    {
+                        custom string urdf:text = "hardware_interface/PositionJointInterface"
+                    }
+
+                    def Scope "mechanicalReduction"
+                    {
+                        custom string urdf:text = "100"
+                    }
+                }
+            }
+
+            def Scope "transmission_4" (
+                displayName = "transmission"
+            )
+            {
+                custom string urdf:name = "tran5"
+
+                def Scope "type"
+                {
+                    custom string urdf:text = "transmission_interface/SimpleTransmission"
+                }
+
+                def Scope "joint"
+                {
+                    custom string urdf:name = "joint5"
+
+                    def Scope "hardwareInterface"
+                    {
+                        custom string urdf:text = "hardware_interface/PositionJointInterface"
+                    }
+                }
+
+                def Scope "actuator"
+                {
+                    custom string urdf:name = "motor5"
+
+                    def Scope "hardwareInterface"
+                    {
+                        custom string urdf:text = "hardware_interface/PositionJointInterface"
+                    }
+
+                    def Scope "mechanicalReduction"
+                    {
+                        custom string urdf:text = "100"
+                    }
+                }
+            }
+
+            def Scope "transmission_5" (
+                displayName = "transmission"
+            )
+            {
+                custom string urdf:name = "tran6"
+
+                def Scope "type"
+                {
+                    custom string urdf:text = "transmission_interface/SimpleTransmission"
+                }
+
+                def Scope "joint"
+                {
+                    custom string urdf:name = "joint6"
+
+                    def Scope "hardwareInterface"
+                    {
+                        custom string urdf:text = "hardware_interface/PositionJointInterface"
+                    }
+                }
+
+                def Scope "actuator"
+                {
+                    custom string urdf:name = "motor6"
+
+                    def Scope "hardwareInterface"
+                    {
+                        custom string urdf:text = "hardware_interface/PositionJointInterface"
+                    }
+
+                    def Scope "mechanicalReduction"
+                    {
+                        custom string urdf:text = "100"
+                    }
+                }
+            }
+
+            def Scope "transmission_6" (
+                displayName = "transmission"
+            )
+            {
+                custom string urdf:name = "tran7"
+
+                def Scope "type"
+                {
+                    custom string urdf:text = "transmission_interface/SimpleTransmission"
+                }
+
+                def Scope "joint"
+                {
+                    custom string urdf:name = "joint7"
+
+                    def Scope "hardwareInterface"
+                    {
+                        custom string urdf:text = "hardware_interface/PositionJointInterface"
+                    }
+                }
+
+                def Scope "actuator"
+                {
+                    custom string urdf:name = "motor7"
+
+                    def Scope "hardwareInterface"
+                    {
+                        custom string urdf:text = "hardware_interface/PositionJointInterface"
+                    }
+
+                    def Scope "mechanicalReduction"
+                    {
+                        custom string urdf:text = "100"
+                    }
+                }
+            }
+
+            def Scope "gazebo"
+            {
+                custom string urdf:reference = "link_base"
+
+                def Scope "selfCollide"
+                {
+                    custom string urdf:text = "true"
+                }
+            }
+
+            def Scope "gazebo_1" (
+                displayName = "gazebo"
+            )
+            {
+                custom string urdf:reference = "link1"
+
+                def Scope "selfCollide"
+                {
+                    custom string urdf:text = "true"
+                }
+            }
+
+            def Scope "gazebo_2" (
+                displayName = "gazebo"
+            )
+            {
+                custom string urdf:reference = "link2"
+
+                def Scope "selfCollide"
+                {
+                    custom string urdf:text = "true"
+                }
+            }
+
+            def Scope "gazebo_3" (
+                displayName = "gazebo"
+            )
+            {
+                custom string urdf:reference = "link3"
+
+                def Scope "selfCollide"
+                {
+                    custom string urdf:text = "true"
+                }
+            }
+
+            def Scope "gazebo_4" (
+                displayName = "gazebo"
+            )
+            {
+                custom string urdf:reference = "link4"
+
+                def Scope "selfCollide"
+                {
+                    custom string urdf:text = "true"
+                }
+            }
+
+            def Scope "gazebo_5" (
+                displayName = "gazebo"
+            )
+            {
+                custom string urdf:reference = "link5"
+
+                def Scope "selfCollide"
+                {
+                    custom string urdf:text = "true"
+                }
+            }
+
+            def Scope "gazebo_6" (
+                displayName = "gazebo"
+            )
+            {
+                custom string urdf:reference = "link6"
+
+                def Scope "selfCollide"
+                {
+                    custom string urdf:text = "true"
+                }
+            }
+
+            def Scope "gazebo_7" (
+                displayName = "gazebo"
+            )
+            {
+                custom string urdf:reference = "link7"
+
+                def Scope "selfCollide"
+                {
+                    custom string urdf:text = "true"
+                }
+            }
+
+            def Scope "transmission_7" (
+                displayName = "transmission"
+            )
+            {
+                custom string urdf:name = "drive_joint_trans"
+
+                def Scope "type"
+                {
+                    custom string urdf:text = "transmission_interface/SimpleTransmission"
+                }
+
+                def Scope "joint"
+                {
+                    custom string urdf:name = "drive_joint"
+
+                    def Scope "hardwareInterface"
+                    {
+                        custom string urdf:text = "hardware_interface/PositionJointInterface"
+                    }
+                }
+
+                def Scope "actuator"
+                {
+                    custom string urdf:name = "drive_joint_motor"
+
+                    def Scope "hardwareInterface"
+                    {
+                        custom string urdf:text = "hardware_interface/PositionJointInterface"
+                    }
+
+                    def Scope "mechanicalReduction"
+                    {
+                        custom string urdf:text = "1"
+                    }
+                }
+            }
+
+            def Scope "gazebo_8" (
+                displayName = "gazebo"
+            )
+            {
+                custom string urdf:reference = "xarm_gripper_base_link"
+
+                def Scope "selfCollide"
+                {
+                    custom string urdf:text = "false"
+                }
+            }
+
+            def Scope "gazebo_9" (
+                displayName = "gazebo"
+            )
+            {
+                custom string urdf:reference = "left_outer_knuckle"
+
+                def Scope "selfCollide"
+                {
+                    custom string urdf:text = "false"
+                }
+            }
+
+            def Scope "gazebo_10" (
+                displayName = "gazebo"
+            )
+            {
+                custom string urdf:reference = "left_finger"
+
+                def Scope "selfCollide"
+                {
+                    custom string urdf:text = "false"
+                }
+            }
+
+            def Scope "gazebo_11" (
+                displayName = "gazebo"
+            )
+            {
+                custom string urdf:reference = "left_inner_knuckle"
+
+                def Scope "selfCollide"
+                {
+                    custom string urdf:text = "false"
+                }
+            }
+
+            def Scope "gazebo_12" (
+                displayName = "gazebo"
+            )
+            {
+                custom string urdf:reference = "right_outer_knuckle"
+
+                def Scope "selfCollide"
+                {
+                    custom string urdf:text = "false"
+                }
+            }
+
+            def Scope "gazebo_13" (
+                displayName = "gazebo"
+            )
+            {
+                custom string urdf:reference = "right_finger"
+
+                def Scope "selfCollide"
+                {
+                    custom string urdf:text = "false"
+                }
+            }
+
+            def Scope "gazebo_14" (
+                displayName = "gazebo"
+            )
+            {
+                custom string urdf:reference = "right_inner_knuckle"
+
+                def Scope "selfCollide"
+                {
+                    custom string urdf:text = "false"
+                }
+            }
+
+            def Scope "gazebo_15" (
+                displayName = "gazebo"
+            )
+            {
+                def Scope "plugin"
+                {
+                    custom string urdf:filename = "libgazebo_mimic_joint_plugin.so"
+                    custom string urdf:name = "left_finger_jointmimic_joint_plugin"
+
+                    def Scope "joint"
+                    {
+                        custom string urdf:text = "drive_joint"
+                    }
+
+                    def Scope "mimicJoint"
+                    {
+                        custom string urdf:text = "left_finger_joint"
+                    }
+
+                    def Scope "hasPID"
+                    {
+                    }
+
+                    def Scope "multiplier"
+                    {
+                        custom string urdf:text = "1.0"
+                    }
+
+                    def Scope "offset"
+                    {
+                        custom string urdf:text = "0"
+                    }
+
+                    def Scope "sensitiveness"
+                    {
+                        custom string urdf:text = "0.0"
+                    }
+
+                    def Scope "maxEffort"
+                    {
+                        custom string urdf:text = "10.0"
+                    }
+                }
+            }
+
+            def Scope "gazebo_16" (
+                displayName = "gazebo"
+            )
+            {
+                def Scope "plugin"
+                {
+                    custom string urdf:filename = "libgazebo_mimic_joint_plugin.so"
+                    custom string urdf:name = "left_inner_knuckle_jointmimic_joint_plugin"
+
+                    def Scope "joint"
+                    {
+                        custom string urdf:text = "drive_joint"
+                    }
+
+                    def Scope "mimicJoint"
+                    {
+                        custom string urdf:text = "left_inner_knuckle_joint"
+                    }
+
+                    def Scope "hasPID"
+                    {
+                    }
+
+                    def Scope "multiplier"
+                    {
+                        custom string urdf:text = "1.0"
+                    }
+
+                    def Scope "offset"
+                    {
+                        custom string urdf:text = "0"
+                    }
+
+                    def Scope "sensitiveness"
+                    {
+                        custom string urdf:text = "0.0"
+                    }
+
+                    def Scope "maxEffort"
+                    {
+                        custom string urdf:text = "10.0"
+                    }
+                }
+            }
+
+            def Scope "gazebo_17" (
+                displayName = "gazebo"
+            )
+            {
+                def Scope "plugin"
+                {
+                    custom string urdf:filename = "libgazebo_mimic_joint_plugin.so"
+                    custom string urdf:name = "right_outer_knuckle_jointmimic_joint_plugin"
+
+                    def Scope "joint"
+                    {
+                        custom string urdf:text = "drive_joint"
+                    }
+
+                    def Scope "mimicJoint"
+                    {
+                        custom string urdf:text = "right_outer_knuckle_joint"
+                    }
+
+                    def Scope "hasPID"
+                    {
+                    }
+
+                    def Scope "multiplier"
+                    {
+                        custom string urdf:text = "1.0"
+                    }
+
+                    def Scope "offset"
+                    {
+                        custom string urdf:text = "0"
+                    }
+
+                    def Scope "sensitiveness"
+                    {
+                        custom string urdf:text = "0.0"
+                    }
+
+                    def Scope "maxEffort"
+                    {
+                        custom string urdf:text = "10.0"
+                    }
+                }
+            }
+
+            def Scope "gazebo_18" (
+                displayName = "gazebo"
+            )
+            {
+                def Scope "plugin"
+                {
+                    custom string urdf:filename = "libgazebo_mimic_joint_plugin.so"
+                    custom string urdf:name = "right_finger_jointmimic_joint_plugin"
+
+                    def Scope "joint"
+                    {
+                        custom string urdf:text = "drive_joint"
+                    }
+
+                    def Scope "mimicJoint"
+                    {
+                        custom string urdf:text = "right_finger_joint"
+                    }
+
+                    def Scope "hasPID"
+                    {
+                    }
+
+                    def Scope "multiplier"
+                    {
+                        custom string urdf:text = "1.0"
+                    }
+
+                    def Scope "offset"
+                    {
+                        custom string urdf:text = "0"
+                    }
+
+                    def Scope "sensitiveness"
+                    {
+                        custom string urdf:text = "0.0"
+                    }
+
+                    def Scope "maxEffort"
+                    {
+                        custom string urdf:text = "10.0"
+                    }
+                }
+            }
+
+            def Scope "gazebo_19" (
+                displayName = "gazebo"
+            )
+            {
+                def Scope "plugin"
+                {
+                    custom string urdf:filename = "libgazebo_mimic_joint_plugin.so"
+                    custom string urdf:name = "right_inner_knuckle_jointmimic_joint_plugin"
+
+                    def Scope "joint"
+                    {
+                        custom string urdf:text = "drive_joint"
+                    }
+
+                    def Scope "mimicJoint"
+                    {
+                        custom string urdf:text = "right_inner_knuckle_joint"
+                    }
+
+                    def Scope "hasPID"
+                    {
+                    }
+
+                    def Scope "multiplier"
+                    {
+                        custom string urdf:text = "1.0"
+                    }
+
+                    def Scope "offset"
+                    {
+                        custom string urdf:text = "0"
+                    }
+
+                    def Scope "sensitiveness"
+                    {
+                        custom string urdf:text = "0.0"
+                    }
+
+                    def Scope "maxEffort"
+                    {
+                        custom string urdf:text = "10.0"
+                    }
+                }
+            }
+
+            def Scope "gazebo_20" (
+                displayName = "gazebo"
+            )
+            {
+                def Scope "plugin"
+                {
+                    custom string urdf:filename = "libgazebo_ros2_control.so"
+                    custom string urdf:name = "gazebo_ros2_control"
+
+                    def Scope "robot_sim_type"
+                    {
+                        custom string urdf:text = "gazebo_ros2_control/GazeboSystem"
+                    }
+
+                    def Scope "parameters"
+                    {
+                        custom string urdf:text = "/root/data/demo_ws/install/xarm_controller/share/xarm_controller/config/xarm7_controllers.yaml"
+                    }
+                }
+            }
+        }
+    }
+}
+
