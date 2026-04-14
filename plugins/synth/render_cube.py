@@ -34,7 +34,13 @@ from PIL import Image, ImageStat
 from pxr import Gf, Sdf, Usd, UsdGeom, UsdLux, UsdShade
 
 
-VIEW_COUNT = 10
+VIEW_COUNT = 50
+ASSET_ROOM_X = 4.5
+ASSET_ROOM_Y_NEG = -4.5
+ASSET_ROOM_Y_POS = 4.5
+ASSET_ROOM_Z_MIN = 0.0
+ASSET_ROOM_Z_MAX = 4.5
+ASSET_ROOM_MARGIN = 0.08
 ROBOT_LINK_PATHS = [
     "Geometry/world/link_base/link1",
     "Geometry/world/link_base/link1/link2",
@@ -54,15 +60,15 @@ ROBOT_GRIPPER_PATHS = [
 ]
 ROBOT_KEYPOINT_PATHS = [
     ("base", "Geometry/world/link_base"),
-    ("joint1", "Geometry/world/link_base/link1"),
-    ("joint2", "Geometry/world/link_base/link1/link2"),
-    ("joint3", "Geometry/world/link_base/link1/link2/link3"),
-    ("joint4", "Geometry/world/link_base/link1/link2/link3/link4"),
-    ("joint5", "Geometry/world/link_base/link1/link2/link3/link4/link5"),
-    ("joint6", "Geometry/world/link_base/link1/link2/link3/link4/link5/link6"),
-    ("joint7", "Geometry/world/link_base/link1/link2/link3/link4/link5/link6/link7"),
-    ("eef", "Geometry/world/link_base/link1/link2/link3/link4/link5/link6/link7/link_eef"),
-    ("tcp", "Geometry/world/link_base/link1/link2/link3/link4/link5/link6/link7/link_eef/xarm_gripper_base_link/link_tcp"),
+    ("joint1", "Physics/joint1"),
+    ("joint2", "Physics/joint2"),
+    ("joint3", "Physics/joint3"),
+    ("joint4", "Physics/joint4"),
+    ("joint5", "Physics/joint5"),
+    ("joint6", "Physics/joint6"),
+    ("joint7", "Physics/joint7"),
+    ("eef", "Physics/joint_eef"),
+    ("tcp", "Physics/joint_tcp"),
 ]
 
 
@@ -94,64 +100,92 @@ def bind_material_stronger(prim: Usd.Prim, material: UsdShade.Material) -> None:
     )
 
 
-def make_ground_and_backdrop(stage: Usd.Stage) -> tuple[UsdShade.Shader, UsdShade.Shader]:
+def make_ground_and_backdrop(
+    stage: Usd.Stage,
+    *,
+    x_half: float = 900.0,
+    y_min: float = -1000.0,
+    y_max: float = 900.0,
+    z_min: float = 0.0,
+    z_max: float = 1200.0,
+    add_front_wall: bool = False,
+) -> tuple[UsdShade.Shader, UsdShade.Shader, UsdShade.Shader]:
     UsdGeom.Xform.Define(stage, "/World/Looks")
 
     ground = UsdGeom.Mesh.Define(stage, "/World/Ground")
     ground.CreatePointsAttr(
         [
-            (-900.0, -900.0, 0.0),
-            (900.0, -900.0, 0.0),
-            (900.0, 900.0, 0.0),
-            (-900.0, 900.0, 0.0),
+            (-x_half, y_min, z_min),
+            (x_half, y_min, z_min),
+            (x_half, y_max, z_min),
+            (-x_half, y_max, z_min),
         ]
     )
     ground.CreateFaceVertexCountsAttr([4])
     ground.CreateFaceVertexIndicesAttr([0, 1, 2, 3])
+    ground.CreateDoubleSidedAttr(True)
     backdrop = UsdGeom.Mesh.Define(stage, "/World/Backdrop")
     backdrop.CreatePointsAttr(
         [
-            (-1200.0, -1000.0, 0.0),
-            (1200.0, -1000.0, 0.0),
-            (1200.0, -1000.0, 1400.0),
-            (-1200.0, -1000.0, 1400.0),
+            (-x_half, y_min, z_min),
+            (x_half, y_min, z_min),
+            (x_half, y_min, z_max),
+            (-x_half, y_min, z_max),
         ]
     )
     backdrop.CreateFaceVertexCountsAttr([4])
     backdrop.CreateFaceVertexIndicesAttr([0, 1, 2, 3])
+    backdrop.CreateDoubleSidedAttr(True)
     left_wall = UsdGeom.Mesh.Define(stage, "/World/LeftWall")
     left_wall.CreatePointsAttr(
         [
-            (-900.0, -1000.0, 0.0),
-            (-900.0, 900.0, 0.0),
-            (-900.0, 900.0, 1200.0),
-            (-900.0, -1000.0, 1200.0),
+            (-x_half, y_min, z_min),
+            (-x_half, y_max, z_min),
+            (-x_half, y_max, z_max),
+            (-x_half, y_min, z_max),
         ]
     )
     left_wall.CreateFaceVertexCountsAttr([4])
     left_wall.CreateFaceVertexIndicesAttr([0, 1, 2, 3])
+    left_wall.CreateDoubleSidedAttr(True)
     right_wall = UsdGeom.Mesh.Define(stage, "/World/RightWall")
     right_wall.CreatePointsAttr(
         [
-            (900.0, 900.0, 0.0),
-            (900.0, -1000.0, 0.0),
-            (900.0, -1000.0, 1200.0),
-            (900.0, 900.0, 1200.0),
+            (x_half, y_max, z_min),
+            (x_half, y_min, z_min),
+            (x_half, y_min, z_max),
+            (x_half, y_max, z_max),
         ]
     )
     right_wall.CreateFaceVertexCountsAttr([4])
     right_wall.CreateFaceVertexIndicesAttr([0, 1, 2, 3])
+    right_wall.CreateDoubleSidedAttr(True)
     ceiling = UsdGeom.Mesh.Define(stage, "/World/Ceiling")
     ceiling.CreatePointsAttr(
         [
-            (-900.0, -1000.0, 1200.0),
-            (900.0, -1000.0, 1200.0),
-            (900.0, 900.0, 1200.0),
-            (-900.0, 900.0, 1200.0),
+            (-x_half, y_min, z_max),
+            (x_half, y_min, z_max),
+            (x_half, y_max, z_max),
+            (-x_half, y_max, z_max),
         ]
     )
     ceiling.CreateFaceVertexCountsAttr([4])
     ceiling.CreateFaceVertexIndicesAttr([0, 1, 2, 3])
+    ceiling.CreateDoubleSidedAttr(True)
+    front_wall = None
+    if add_front_wall:
+        front_wall = UsdGeom.Mesh.Define(stage, "/World/FrontWall")
+        front_wall.CreatePointsAttr(
+            [
+                (-x_half, y_max, z_min),
+                (x_half, y_max, z_min),
+                (x_half, y_max, z_max),
+                (-x_half, y_max, z_max),
+            ]
+        )
+        front_wall.CreateFaceVertexCountsAttr([4])
+        front_wall.CreateFaceVertexIndicesAttr([0, 1, 2, 3])
+        front_wall.CreateDoubleSidedAttr(True)
 
     ground_mat, ground_shader = make_material(stage, "/World/Looks/GroundMat")
     backdrop_mat, backdrop_shader = make_material(stage, "/World/Looks/BackdropMat")
@@ -161,6 +195,8 @@ def make_ground_and_backdrop(stage: Usd.Stage) -> tuple[UsdShade.Shader, UsdShad
     bind_material(left_wall.GetPrim(), wall_mat)
     bind_material(right_wall.GetPrim(), wall_mat)
     bind_material(ceiling.GetPrim(), wall_mat)
+    if front_wall is not None:
+        bind_material(front_wall.GetPrim(), wall_mat)
     return ground_shader, backdrop_shader, wall_shader
 
 
@@ -237,7 +273,15 @@ def create_asset_stage(usd_path: Path) -> tuple[Usd.Stage, dict[str, object]]:
     asset_api.SetRotate((0.0, 0.0, 0.0))
     asset_api.SetScale((1.0, 1.0, 1.0))
 
-    ground_shader, backdrop_shader, wall_shader = make_ground_and_backdrop(stage)
+    ground_shader, backdrop_shader, wall_shader = make_ground_and_backdrop(
+        stage,
+        x_half=ASSET_ROOM_X,
+        y_min=ASSET_ROOM_Y_NEG,
+        y_max=ASSET_ROOM_Y_POS,
+        z_min=ASSET_ROOM_Z_MIN,
+        z_max=ASSET_ROOM_Z_MAX,
+        add_front_wall=True,
+    )
     dome, sun, sun_api, fill = make_lights(stage)
     pump(8)
 
@@ -273,15 +317,20 @@ def create_asset_stage(usd_path: Path) -> tuple[Usd.Stage, dict[str, object]]:
     return stage, scene
 
 
-def create_camera(stage: Usd.Stage, eye: tuple[float, float, float], target: tuple[float, float, float], name: str) -> Sdf.Path:
+def create_camera(
+    stage: Usd.Stage,
+    eye: tuple[float, float, float],
+    target: tuple[float, float, float],
+    name: str,
+    rpy_deg: tuple[float, float, float] = (0.0, 0.0, 0.0),
+) -> Sdf.Path:
     camera = UsdGeom.Camera.Define(stage, f"/World/{name}")
     camera.CreateFocalLengthAttr(24.0)
+    camera.CreateHorizontalApertureAttr(20.955)
+    camera.CreateVerticalApertureAttr(20.955)
     camera.CreateFocusDistanceAttr(700.0)
     camera.CreateClippingRangeAttr(Gf.Vec2f(1.0, 10000.0))
-
-    m = Gf.Matrix4d(1.0)
-    m.SetLookAt(Gf.Vec3d(*eye), Gf.Vec3d(*target), Gf.Vec3d(0.0, 0.0, 1.0))
-    camera.MakeMatrixXform().Set(m.GetInverse())
+    camera.MakeMatrixXform().Set(camera_xform(eye, target, rpy_deg))
     return camera.GetPath()
 
 
@@ -313,6 +362,21 @@ def vec3d_tuple(vec: Gf.Vec3d) -> list[float]:
 
 def mat4_list(mat: Gf.Matrix4d) -> list[list[float]]:
     return [[float(mat[r][c]) for c in range(4)] for r in range(4)]
+
+
+def camera_xform(eye: tuple[float, float, float], target: tuple[float, float, float], rpy_deg: tuple[float, float, float]) -> Gf.Matrix4d:
+    look = Gf.Matrix4d(1.0)
+    look.SetLookAt(Gf.Vec3d(*eye), Gf.Vec3d(*target), Gf.Vec3d(0.0, 0.0, 1.0))
+    camera_to_world = look.GetInverse()
+    roll, pitch, yaw = rpy_deg
+    rot = (
+        Gf.Rotation(Gf.Vec3d(0.0, 0.0, 1.0), roll)
+        * Gf.Rotation(Gf.Vec3d(1.0, 0.0, 0.0), pitch)
+        * Gf.Rotation(Gf.Vec3d(0.0, 1.0, 0.0), yaw)
+    )
+    offset = Gf.Matrix4d(1.0)
+    offset.SetRotateOnly(rot)
+    return camera_to_world * offset
 
 
 def vec3(color: tuple[float, float, float]) -> Gf.Vec3f:
@@ -547,18 +611,177 @@ def project_point(world_to_camera: Gf.Matrix4d, point_world: Gf.Vec3d, intr: dic
     }
 
 
-def robot_keypoint_payload(stage: Usd.Stage, subject_path: Sdf.Path, camera_path: Sdf.Path, scene: dict[str, object]) -> dict[str, object]:
-    calibration = camera_calibration(stage, camera_path)
-    intr = calibration["intrinsics"]
-    world_to_camera = UsdGeom.XformCache().GetLocalToWorldTransform(stage.GetPrimAtPath(camera_path)).GetInverse()
-    xform_cache = UsdGeom.XformCache()
+def joint_world_point(xform_cache: UsdGeom.XformCache, joint_prim: Usd.Prim) -> Gf.Vec3d | None:
+    body0_targets = joint_prim.GetRelationship("physics:body0").GetTargets()
+    local_pos0_attr = joint_prim.GetAttribute("physics:localPos0")
+    if not body0_targets or not local_pos0_attr.IsValid():
+        return None
+    body0 = joint_prim.GetStage().GetPrimAtPath(body0_targets[0])
+    if not body0.IsValid():
+        return None
+    local_pos0 = local_pos0_attr.Get()
+    if local_pos0 is None:
+        return None
+    return xform_cache.GetLocalToWorldTransform(body0).Transform(Gf.Vec3d(*local_pos0))
 
-    keypoints = []
+
+def robot_world_points(stage: Usd.Stage, subject_path: Sdf.Path) -> list[tuple[str, Gf.Vec3d]]:
+    xform_cache = UsdGeom.XformCache()
+    points: list[tuple[str, Gf.Vec3d]] = []
     for name, rel_path in ROBOT_KEYPOINT_PATHS:
         prim = stage.GetPrimAtPath(f"{subject_path.pathString}/{rel_path}")
         if not prim.IsValid():
             continue
-        point_world = xform_cache.GetLocalToWorldTransform(prim).ExtractTranslation()
+        if rel_path.startswith("Physics/"):
+            point = joint_world_point(xform_cache, prim)
+        else:
+            point = xform_cache.GetLocalToWorldTransform(prim).ExtractTranslation()
+        if point is not None:
+            points.append((name, point))
+    return points
+
+
+def segment_distance(a0: Gf.Vec3d, a1: Gf.Vec3d, b0: Gf.Vec3d, b1: Gf.Vec3d) -> float:
+    u = a1 - a0
+    v = b1 - b0
+    w = a0 - b0
+    a = float(Gf.Dot(u, u))
+    b = float(Gf.Dot(u, v))
+    c = float(Gf.Dot(v, v))
+    d = float(Gf.Dot(u, w))
+    e = float(Gf.Dot(v, w))
+    den = a * c - b * b
+    eps = 1e-8
+    if den < eps:
+        s = 0.0
+        t = max(0.0, min(1.0, e / c if c > eps else 0.0))
+    else:
+        s = max(0.0, min(1.0, (b * e - c * d) / den))
+        t = max(0.0, min(1.0, (a * e - b * d) / den))
+    pa = a0 + s * u
+    pb = b0 + t * v
+    return float((pa - pb).GetLength())
+
+
+def point_segment_distance(p: Gf.Vec3d, a: Gf.Vec3d, b: Gf.Vec3d) -> float:
+    ab = b - a
+    denom = float(Gf.Dot(ab, ab))
+    if denom <= 1e-8:
+        return float((p - a).GetLength())
+    t = max(0.0, min(1.0, float(Gf.Dot(p - a, ab)) / denom))
+    proj = a + t * ab
+    return float((p - proj).GetLength())
+
+
+def robot_segments(points: list[tuple[str, Gf.Vec3d]]) -> list[tuple[str, str, Gf.Vec3d, Gf.Vec3d]]:
+    by_name = {name: point for name, point in points}
+    edges = [
+        ("base", "joint1"),
+        ("joint1", "joint3"),
+        ("joint3", "joint4"),
+        ("joint4", "joint5"),
+        ("joint5", "joint7"),
+        ("joint7", "tcp"),
+    ]
+    out = []
+    for a, b in edges:
+        if a in by_name and b in by_name:
+            out.append((a, b, by_name[a], by_name[b]))
+    return out
+
+
+def robot_penetrates_room(bbox: Gf.Range3d) -> bool:
+    mn = bbox.GetMin()
+    mx = bbox.GetMax()
+    return any(
+        [
+            float(mn[0]) < -ASSET_ROOM_X + ASSET_ROOM_MARGIN,
+            float(mx[0]) > ASSET_ROOM_X - ASSET_ROOM_MARGIN,
+            float(mn[1]) < ASSET_ROOM_Y_NEG + ASSET_ROOM_MARGIN,
+            float(mx[1]) > ASSET_ROOM_Y_POS - ASSET_ROOM_MARGIN,
+            float(mn[2]) < ASSET_ROOM_Z_MIN - ASSET_ROOM_MARGIN,
+            float(mx[2]) > ASSET_ROOM_Z_MAX - ASSET_ROOM_MARGIN,
+        ]
+    )
+
+
+def robot_self_collision(points: list[tuple[str, Gf.Vec3d]]) -> bool:
+    segments = robot_segments(points)
+    if len(segments) < 4:
+        return False
+    interesting_pairs = {
+        ("base", "joint1", "joint4", "joint5"),
+        ("base", "joint1", "joint5", "joint7"),
+        ("base", "joint1", "joint7", "tcp"),
+        ("joint1", "joint3", "joint5", "joint7"),
+        ("joint1", "joint3", "joint7", "tcp"),
+        ("joint3", "joint4", "joint7", "tcp"),
+    }
+    for i, (a0_name, a1_name, a0, a1) in enumerate(segments):
+        for j in range(i + 1, len(segments)):
+            b0_name, b1_name, b0, b1 = segments[j]
+            if (a0_name, a1_name, b0_name, b1_name) not in interesting_pairs:
+                continue
+            if segment_distance(a0, a1, b0, b1) < 0.02:
+                return True
+    return False
+
+
+def camera_collides_with_robot(eye: tuple[float, float, float], bbox: Gf.Range3d, points: list[tuple[str, Gf.Vec3d]]) -> bool:
+    eye_vec = Gf.Vec3d(*eye)
+    mn = bbox.GetMin()
+    mx = bbox.GetMax()
+    if (
+        float(mn[0]) - 0.12 <= eye[0] <= float(mx[0]) + 0.12
+        and float(mn[1]) - 0.12 <= eye[1] <= float(mx[1]) + 0.12
+        and float(mn[2]) - 0.12 <= eye[2] <= float(mx[2]) + 0.12
+    ):
+        return True
+    for _, point in points:
+        if float((eye_vec - point).GetLength()) < 0.22:
+            return True
+    for _, _, a, b in robot_segments(points):
+        if point_segment_distance(eye_vec, a, b) < 0.16:
+            return True
+    return False
+
+
+def sample_robot_camera(
+    stage: Usd.Stage,
+    subject_path: Sdf.Path,
+    rng: random.Random,
+    view_index: int,
+) -> tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float], int]:
+    points = robot_world_points(stage, subject_path)
+    target_name, target_point = rng.choice(points)
+    azimuth = (360.0 * view_index / VIEW_COUNT) + rng.uniform(-55.0, 55.0)
+    radius = rng.uniform(0.65, 2.4)
+    height = rng.uniform(0.15, 1.55)
+    theta = math.radians(azimuth)
+    eye = (radius * math.cos(theta), radius * math.sin(theta), height)
+    target = (float(target_point[0]), float(target_point[1]), float(target_point[2]))
+    rpy_deg = (
+        rng.uniform(-40.0, 40.0),
+        rng.uniform(-24.0, 24.0),
+        rng.uniform(-24.0, 24.0),
+    )
+    fx_fy = IMAGE_SIZE * 24.0 / 20.955
+    intr = {"fx": fx_fy, "fy": fx_fy, "cx": IMAGE_SIZE / 2.0, "cy": IMAGE_SIZE / 2.0}
+    world_to_camera = camera_xform(eye, target, rpy_deg).GetInverse()
+    visible = 0
+    for _, point in points:
+        if project_point(world_to_camera, point, intr)["visible"]:
+            visible += 1
+    return eye, target, rpy_deg, visible
+
+
+def robot_keypoint_payload(stage: Usd.Stage, subject_path: Sdf.Path, camera_path: Sdf.Path, scene: dict[str, object]) -> dict[str, object]:
+    calibration = camera_calibration(stage, camera_path)
+    intr = calibration["intrinsics"]
+    world_to_camera = UsdGeom.XformCache().GetLocalToWorldTransform(stage.GetPrimAtPath(camera_path)).GetInverse()
+
+    keypoints = []
+    for name, point_world in robot_world_points(stage, subject_path):
         projection = project_point(world_to_camera, point_world, intr)
         keypoints.append(
             {
@@ -630,34 +853,67 @@ def main() -> None:
     for i in range(VIEW_COUNT):
         image_path = out_dir / f"view_{i}.png"
         json_path = out_dir / f"view_{i}.json"
-        if scene["mode"] == "cube":
-            eye, target = apply_domain_randomization(scene, rng, i)
-            bbox = subject_bbox(stage, subject_path)
-        else:
-            eye, target = apply_robot_randomization(scene, rng, i)
-            bbox = subject_bbox(stage, subject_path)
-        camera_path = create_camera(stage, eye, target, f"Camera_{i}")
-        frame_cube(viewport, camera_path, subject_path)
-        if image_path.exists():
-            image_path.unlink()
-        capture_viewport_to_file(viewport, os.fspath(image_path))
-        wait_for_capture(image_path)
-        mn, mx, mean = image_stats(image_path)
+        accepted = False
+        reject_counts = {"room": 0, "self": 0, "camera": 0, "pose": 0, "dark": 0}
+        for attempt in range(40):
+            rpy_deg = (0.0, 0.0, 0.0)
+            if scene["mode"] == "cube":
+                eye, target = apply_domain_randomization(scene, rng, i)
+                bbox = subject_bbox(stage, subject_path)
+            else:
+                pose_ok = False
+                for _ in range(24):
+                    apply_robot_randomization(scene, rng, i)
+                    bbox = subject_bbox(stage, subject_path)
+                    points = robot_world_points(stage, subject_path)
+                    if robot_penetrates_room(bbox):
+                        reject_counts["room"] += 1
+                        continue
+                    if robot_self_collision(points):
+                        reject_counts["self"] += 1
+                        continue
+                    eye, target, rpy_deg, visible_count = sample_robot_camera(stage, subject_path, rng, i)
+                    if camera_collides_with_robot(eye, bbox, points):
+                        reject_counts["camera"] += 1
+                        continue
+                    if visible_count >= 1:
+                        scene["visible_keypoint_count"] = visible_count
+                        scene["camera_rpy_deg"] = list(rpy_deg)
+                        pose_ok = True
+                        break
+                if not pose_ok:
+                    reject_counts["pose"] += 1
+                    continue
+            camera_path = create_camera(stage, eye, target, f"Camera_{i}", rpy_deg=rpy_deg)
+            frame_cube(viewport, camera_path, subject_path)
+            if image_path.exists():
+                image_path.unlink()
+            if json_path.exists():
+                json_path.unlink()
+            capture_viewport_to_file(viewport, os.fspath(image_path))
+            wait_for_capture(image_path)
+            mn, mx, mean = image_stats(image_path)
+            if mx > 0 and mean >= 8.0:
+                accepted = True
+                break
+            reject_counts["dark"] += 1
+        if not accepted:
+            raise RuntimeError(f"Failed to render a usable frame for view_{i}: {reject_counts}")
         sidecar = {
             "image_file": image_path.name,
             "scene_mode": scene["mode"],
             "camera_target_world": [float(target[0]), float(target[1]), float(target[2])],
+            "camera_rpy_deg": [float(rpy_deg[0]), float(rpy_deg[1]), float(rpy_deg[2])],
         }
         if scene["mode"] == "asset":
             sidecar.update(robot_keypoint_payload(stage, subject_path, camera_path, scene))
+            sidecar["visible_keypoint_count"] = int(scene.get("visible_keypoint_count", 0))
         else:
             sidecar["joints"] = {}
             sidecar["keypoints"] = []
             sidecar["camera"] = camera_calibration(stage, camera_path)
         write_sidecar(json_path, sidecar)
         print(f"view_{i}: eye={tuple(round(v, 1) for v in eye)} target={tuple(round(v, 1) for v in target)} min={mn} max={mx} mean={mean:.2f}")
-        if mx == 0 or mean < 8.0:
-            raise RuntimeError(f"{image_path.name} is fully black")
         pump(4)
 
     print(f"Wrote renders to {out_dir}")
