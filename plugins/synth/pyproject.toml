@@ -9,6 +9,8 @@ dependencies = [
     "isaacsim-replicator==6.0.0.0",
     "isaacsim-robot==6.0.0.0",
     "opencv-python-headless>=4.13.0.90",
+    "pyroki",
+    "tyro>=0.9.17",
     "urdf-usd-converter==0.1.0",
 ]
 
@@ -17,6 +19,7 @@ prerelease = "allow"
 
 [tool.uv.sources]
 urdf-usd-converter = { git = "https://github.com/newton-physics/urdf-usd-converter", tag = "v0.1.0" }
+pyroki = { git = "https://github.com/chungmin99/pyroki" }
 
 [[tool.uv.index]]
 name = "nvidia"
