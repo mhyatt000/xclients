@@ -34,8 +34,23 @@ from pxr import Gf, Sdf, Usd, UsdGeom, UsdLux, UsdShade
 
 
 VIEW_COUNT = 5
-
-
+ROBOT_LINK_PATHS = [
+    "Geometry/world/link_base/link1",
+    "Geometry/world/link_base/link1/link2",
+    "Geometry/world/link_base/link1/link2/link3",
+    "Geometry/world/link_base/link1/link2/link3/link4",
+    "Geometry/world/link_base/link1/link2/link3/link4/link5",
+    "Geometry/world/link_base/link1/link2/link3/link4/link5/link6",
+    "Geometry/world/link_base/link1/link2/link3/link4/link5/link6/link7",
+]
+ROBOT_GRIPPER_PATHS = [
+    "Geometry/world/link_base/link1/link2/link3/link4/link5/link6/link7/link_eef/xarm_gripper_base_link/left_outer_knuckle",
+    "Geometry/world/link_base/link1/link2/link3/link4/link5/link6/link7/link_eef/xarm_gripper_base_link/left_outer_knuckle/left_finger",
+    "Geometry/world/link_base/link1/link2/link3/link4/link5/link6/link7/link_eef/xarm_gripper_base_link/left_inner_knuckle",
+    "Geometry/world/link_base/link1/link2/link3/link4/link5/link6/link7/link_eef/xarm_gripper_base_link/right_outer_knuckle",
+    "Geometry/world/link_base/link1/link2/link3/link4/link5/link6/link7/link_eef/xarm_gripper_base_link/right_outer_knuckle/right_finger",
+    "Geometry/world/link_base/link1/link2/link3/link4/link5/link6/link7/link_eef/xarm_gripper_base_link/right_inner_knuckle",
+]
 def pump(frames: int = 1) -> None:
     for _ in range(frames):
         APP.update()
@@ -55,6 +70,13 @@ def make_material(stage: Usd.Stage, path: str) -> tuple[UsdShade.Material, UsdSh
 
 def bind_material(prim: Usd.Prim, material: UsdShade.Material) -> None:
     UsdShade.MaterialBindingAPI(prim).Bind(material)
+
+
+def bind_material_stronger(prim: Usd.Prim, material: UsdShade.Material) -> None:
+    UsdShade.MaterialBindingAPI(prim).Bind(
+        material,
+        bindingStrength=UsdShade.Tokens.strongerThanDescendants,
+    )
 
 
 def make_ground_and_backdrop(stage: Usd.Stage) -> tuple[UsdShade.Shader, UsdShade.Shader]:
@@ -82,15 +104,52 @@ def make_ground_and_backdrop(stage: Usd.Stage) -> tuple[UsdShade.Shader, UsdShad
     )
     backdrop.CreateFaceVertexCountsAttr([4])
     backdrop.CreateFaceVertexIndicesAttr([0, 1, 2, 3])
+    left_wall = UsdGeom.Mesh.Define(stage, "/World/LeftWall")
+    left_wall.CreatePointsAttr(
+        [
+            (-900.0, -1000.0, 0.0),
+            (-900.0, 900.0, 0.0),
+            (-900.0, 900.0, 1200.0),
+            (-900.0, -1000.0, 1200.0),
+        ]
+    )
+    left_wall.CreateFaceVertexCountsAttr([4])
+    left_wall.CreateFaceVertexIndicesAttr([0, 1, 2, 3])
+    right_wall = UsdGeom.Mesh.Define(stage, "/World/RightWall")
+    right_wall.CreatePointsAttr(
+        [
+            (900.0, 900.0, 0.0),
+            (900.0, -1000.0, 0.0),
+            (900.0, -1000.0, 1200.0),
+            (900.0, 900.0, 1200.0),
+        ]
+    )
+    right_wall.CreateFaceVertexCountsAttr([4])
+    right_wall.CreateFaceVertexIndicesAttr([0, 1, 2, 3])
+    ceiling = UsdGeom.Mesh.Define(stage, "/World/Ceiling")
+    ceiling.CreatePointsAttr(
+        [
+            (-900.0, -1000.0, 1200.0),
+            (900.0, -1000.0, 1200.0),
+            (900.0, 900.0, 1200.0),
+            (-900.0, 900.0, 1200.0),
+        ]
+    )
+    ceiling.CreateFaceVertexCountsAttr([4])
+    ceiling.CreateFaceVertexIndicesAttr([0, 1, 2, 3])
 
     ground_mat, ground_shader = make_material(stage, "/World/Looks/GroundMat")
     backdrop_mat, backdrop_shader = make_material(stage, "/World/Looks/BackdropMat")
+    wall_mat, wall_shader = make_material(stage, "/World/Looks/WallMat")
     bind_material(ground.GetPrim(), ground_mat)
     bind_material(backdrop.GetPrim(), backdrop_mat)
-    return ground_shader, backdrop_shader
+    bind_material(left_wall.GetPrim(), wall_mat)
+    bind_material(right_wall.GetPrim(), wall_mat)
+    bind_material(ceiling.GetPrim(), wall_mat)
+    return ground_shader, backdrop_shader, wall_shader
 
 
-def make_lights(stage: Usd.Stage) -> tuple[UsdLux.DomeLight, UsdLux.DistantLight, UsdGeom.XformCommonAPI]:
+def make_lights(stage: Usd.Stage) -> tuple[UsdLux.DomeLight, UsdLux.DistantLight, UsdGeom.XformCommonAPI, UsdLux.DistantLight]:
     dome = UsdLux.DomeLight.Define(stage, "/World/DomeLight")
     dome.CreateIntensityAttr(1500.0)
     dome.CreateColorAttr(Gf.Vec3f(1.0, 1.0, 1.0))
@@ -100,7 +159,11 @@ def make_lights(stage: Usd.Stage) -> tuple[UsdLux.DomeLight, UsdLux.DistantLight
     sun.CreateColorAttr(Gf.Vec3f(1.0, 1.0, 1.0))
     sun_api = UsdGeom.XformCommonAPI(sun)
     sun_api.SetRotate((315.0, 0.0, 0.0))
-    return dome, sun, sun_api
+    fill = UsdLux.DistantLight.Define(stage, "/World/FillLight")
+    fill.CreateIntensityAttr(1800.0)
+    fill.CreateColorAttr(Gf.Vec3f(1.0, 1.0, 1.0))
+    UsdGeom.XformCommonAPI(fill).SetRotate((40.0, 30.0, 0.0))
+    return dome, sun, sun_api, fill
 
 
 def create_cube_stage() -> tuple[Usd.Stage, dict[str, object]]:
@@ -117,8 +180,8 @@ def create_cube_stage() -> tuple[Usd.Stage, dict[str, object]]:
 
     cube_mat, cube_shader = make_material(stage, "/World/Looks/CubeMat")
     bind_material(cube.GetPrim(), cube_mat)
-    ground_shader, backdrop_shader = make_ground_and_backdrop(stage)
-    dome, sun, sun_api = make_lights(stage)
+    ground_shader, backdrop_shader, wall_shader = make_ground_and_backdrop(stage)
+    dome, sun, sun_api, fill = make_lights(stage)
 
     stage.Save()
     scene = {
@@ -129,9 +192,11 @@ def create_cube_stage() -> tuple[Usd.Stage, dict[str, object]]:
         "subject_shader": cube_shader,
         "ground_shader": ground_shader,
         "backdrop_shader": backdrop_shader,
+        "wall_shader": wall_shader,
         "dome": dome,
         "sun": sun,
         "sun_api": sun_api,
+        "fill": fill,
     }
     return stage, scene
 
@@ -152,18 +217,42 @@ def create_asset_stage(usd_path: Path) -> tuple[Usd.Stage, dict[str, object]]:
 
     asset = UsdGeom.Xform.Define(stage, "/World/Subject")
     asset.GetPrim().GetReferences().AddReference(os.fspath(usd_path))
+    asset_api = UsdGeom.XformCommonAPI(asset)
+    asset_api.SetTranslate((0.0, 0.0, 0.0))
+    asset_api.SetRotate((0.0, 0.0, 0.0))
+    asset_api.SetScale((1.0, 1.0, 1.0))
 
-    ground_shader, backdrop_shader = make_ground_and_backdrop(stage)
-    dome, sun, sun_api = make_lights(stage)
+    ground_shader, backdrop_shader, wall_shader = make_ground_and_backdrop(stage)
+    dome, sun, sun_api, fill = make_lights(stage)
+    pump(8)
+
+    link_orients: list[tuple[UsdGeom.XformOp, Gf.Quatf, str]] = []
+    for rel_path in ROBOT_LINK_PATHS + ROBOT_GRIPPER_PATHS:
+        prim = stage.GetPrimAtPath(f"{asset.GetPath().pathString}/{rel_path}")
+        if not prim.IsValid():
+            continue
+        xformable = UsdGeom.Xformable(prim)
+        for op in xformable.GetOrderedXformOps():
+            if op.GetOpType() == UsdGeom.XformOp.TypeOrient:
+                link_orients.append((op, op.Get(), rel_path))
+                break
+
+    robot_mat, robot_shader = make_material(stage, "/World/Looks/RobotMat")
+    bind_material_stronger(asset.GetPrim(), robot_mat)
 
     scene = {
         "mode": "asset",
+        "asset_api": asset_api,
         "subject_path": asset.GetPath(),
+        "robot_link_orients": link_orients,
+        "subject_shader": robot_shader,
         "ground_shader": ground_shader,
         "backdrop_shader": backdrop_shader,
+        "wall_shader": wall_shader,
         "dome": dome,
         "sun": sun,
         "sun_api": sun_api,
+        "fill": fill,
     }
     stage.Save()
     return stage, scene
@@ -225,6 +314,29 @@ def rand_muted_color(rng: random.Random) -> tuple[float, float, float]:
     return colorsys.hsv_to_rgb(hue, sat, val)
 
 
+def rand_room_white(rng: random.Random, floor: bool = False) -> tuple[float, float, float]:
+    hue = rng.uniform(0.0, 1.0)
+    sat = rng.uniform(0.0, 0.08 if not floor else 0.12)
+    val = rng.uniform(0.88, 0.99) if not floor else rng.uniform(0.72, 0.92)
+    return colorsys.hsv_to_rgb(hue, sat, val)
+
+
+def rand_neutral_metal(rng: random.Random) -> tuple[float, float, float]:
+    base = rng.uniform(0.45, 0.92)
+    tint = rng.uniform(-0.06, 0.06)
+    return (
+        max(0.2, min(1.0, base + tint)),
+        max(0.2, min(1.0, base)),
+        max(0.2, min(1.0, base - tint)),
+    )
+
+
+def rotate_about_z(base: Gf.Quatf, degrees: float) -> Gf.Quatf:
+    spin = Gf.Rotation(Gf.Vec3d(0.0, 0.0, 1.0), degrees).GetQuat()
+    spin_f = Gf.Quatf(float(spin.GetReal()), Gf.Vec3f(*spin.GetImaginary()))
+    return base * spin_f
+
+
 def apply_domain_randomization(scene: dict[str, object], rng: random.Random, view_index: int) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
     if scene["mode"] != "cube":
         raise RuntimeError("Cube randomization called for non-cube scene")
@@ -232,9 +344,11 @@ def apply_domain_randomization(scene: dict[str, object], rng: random.Random, vie
     cube_shader: UsdShade.Shader = scene["subject_shader"]  # type: ignore[assignment]
     ground_shader: UsdShade.Shader = scene["ground_shader"]  # type: ignore[assignment]
     backdrop_shader: UsdShade.Shader = scene["backdrop_shader"]  # type: ignore[assignment]
+    wall_shader: UsdShade.Shader = scene["wall_shader"]  # type: ignore[assignment]
     dome: UsdLux.DomeLight = scene["dome"]  # type: ignore[assignment]
     sun: UsdLux.DistantLight = scene["sun"]  # type: ignore[assignment]
     sun_api: UsdGeom.XformCommonAPI = scene["sun_api"]  # type: ignore[assignment]
+    fill: UsdLux.DistantLight = scene["fill"]  # type: ignore[assignment]
 
     cube_translate = (
         rng.uniform(-45.0, 45.0),
@@ -252,21 +366,26 @@ def apply_domain_randomization(scene: dict[str, object], rng: random.Random, vie
     cube_api.SetScale((cube_scale, cube_scale, cube_scale))
 
     cube_color = rand_vivid_color(rng)
-    ground_color = rand_muted_color(rng)
-    backdrop_color = rand_muted_color(rng)
+    ground_color = rand_room_white(rng, floor=True)
+    backdrop_color = rand_room_white(rng)
+    wall_color = rand_room_white(rng)
     cube_shader.GetInput("diffuseColor").Set(vec3(cube_color))
     cube_shader.GetInput("roughness").Set(rng.uniform(0.08, 0.55))
     cube_shader.GetInput("metallic").Set(rng.uniform(0.0, 0.15))
     ground_shader.GetInput("diffuseColor").Set(vec3(ground_color))
-    ground_shader.GetInput("roughness").Set(rng.uniform(0.4, 0.95))
+    ground_shader.GetInput("roughness").Set(rng.uniform(0.3, 0.7))
     backdrop_shader.GetInput("diffuseColor").Set(vec3(backdrop_color))
-    backdrop_shader.GetInput("roughness").Set(rng.uniform(0.5, 0.95))
+    backdrop_shader.GetInput("roughness").Set(rng.uniform(0.45, 0.8))
+    wall_shader.GetInput("diffuseColor").Set(vec3(wall_color))
+    wall_shader.GetInput("roughness").Set(rng.uniform(0.35, 0.7))
 
-    dome.GetIntensityAttr().Set(rng.uniform(350.0, 1200.0))
-    dome.GetColorAttr().Set(vec3(rand_color(rng, 0.75, 1.0)))
-    sun.GetIntensityAttr().Set(rng.uniform(5000.0, 14000.0))
-    sun.GetColorAttr().Set(vec3(rand_color(rng, 0.7, 1.0)))
+    dome.GetIntensityAttr().Set(rng.uniform(700.0, 2200.0))
+    dome.GetColorAttr().Set(vec3(rand_room_white(rng)))
+    sun.GetIntensityAttr().Set(rng.uniform(9000.0, 22000.0))
+    sun.GetColorAttr().Set(vec3(rand_room_white(rng)))
     sun_api.SetRotate((rng.uniform(230.0, 330.0), rng.uniform(-25.0, 25.0), 0.0))
+    fill.GetIntensityAttr().Set(rng.uniform(2500.0, 9000.0))
+    fill.GetColorAttr().Set(vec3(rand_room_white(rng)))
 
     azimuth = (360.0 * view_index / VIEW_COUNT) + rng.uniform(-18.0, 18.0)
     radius = rng.uniform(480.0, 620.0)
@@ -274,6 +393,59 @@ def apply_domain_randomization(scene: dict[str, object], rng: random.Random, vie
     theta = math.radians(azimuth)
     eye = (radius * math.cos(theta), radius * math.sin(theta), height)
     target = cube_translate
+    return eye, target
+
+
+def apply_robot_randomization(scene: dict[str, object], rng: random.Random, view_index: int) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
+    asset_api: UsdGeom.XformCommonAPI = scene["asset_api"]  # type: ignore[assignment]
+    ground_shader: UsdShade.Shader = scene["ground_shader"]  # type: ignore[assignment]
+    backdrop_shader: UsdShade.Shader = scene["backdrop_shader"]  # type: ignore[assignment]
+    wall_shader: UsdShade.Shader = scene["wall_shader"]  # type: ignore[assignment]
+    dome: UsdLux.DomeLight = scene["dome"]  # type: ignore[assignment]
+    sun: UsdLux.DistantLight = scene["sun"]  # type: ignore[assignment]
+    sun_api: UsdGeom.XformCommonAPI = scene["sun_api"]  # type: ignore[assignment]
+    fill: UsdLux.DistantLight = scene["fill"]  # type: ignore[assignment]
+    link_orients: list[tuple[UsdGeom.XformOp, Gf.Quatf, str]] = scene["robot_link_orients"]  # type: ignore[assignment]
+    robot_shader: UsdShade.Shader = scene["subject_shader"]  # type: ignore[assignment]
+
+    asset_api.SetTranslate((0.0, 0.0, 0.0))
+    asset_api.SetRotate((0.0, 0.0, 0.0))
+    asset_api.SetScale((1.0, 1.0, 1.0))
+
+    arm_limits = [170.0, 110.0, 165.0, 120.0, 165.0, 110.0, 175.0]
+    for index, (op, base_quat, _) in enumerate(link_orients[:7]):
+        op.Set(rotate_about_z(base_quat, rng.uniform(-arm_limits[index], arm_limits[index])))
+
+    grip_angle = rng.uniform(0.0, 28.0)
+    for op, base_quat, rel_path in link_orients[7:]:
+        sign = -1.0 if "right" in rel_path else 1.0
+        op.Set(rotate_about_z(base_quat, sign * grip_angle))
+
+    robot_shader.GetInput("diffuseColor").Set(vec3(rand_neutral_metal(rng) if rng.random() < 0.5 else rand_vivid_color(rng)))
+    robot_shader.GetInput("roughness").Set(rng.uniform(0.12, 0.55))
+    robot_shader.GetInput("metallic").Set(rng.uniform(0.0, 0.85))
+
+    ground_shader.GetInput("diffuseColor").Set(vec3(rand_room_white(rng, floor=True)))
+    ground_shader.GetInput("roughness").Set(rng.uniform(0.28, 0.68))
+    backdrop_shader.GetInput("diffuseColor").Set(vec3(rand_room_white(rng)))
+    backdrop_shader.GetInput("roughness").Set(rng.uniform(0.38, 0.72))
+    wall_shader.GetInput("diffuseColor").Set(vec3(rand_room_white(rng)))
+    wall_shader.GetInput("roughness").Set(rng.uniform(0.3, 0.68))
+
+    dome.GetIntensityAttr().Set(rng.uniform(800.0, 2400.0))
+    dome.GetColorAttr().Set(vec3(rand_room_white(rng)))
+    sun.GetIntensityAttr().Set(rng.uniform(9000.0, 24000.0))
+    sun.GetColorAttr().Set(vec3(rand_room_white(rng)))
+    sun_api.SetRotate((rng.uniform(220.0, 330.0), rng.uniform(-25.0, 25.0), 0.0))
+    fill.GetIntensityAttr().Set(rng.uniform(3000.0, 10000.0))
+    fill.GetColorAttr().Set(vec3(rand_room_white(rng)))
+
+    azimuth = (360.0 * view_index / VIEW_COUNT) + rng.uniform(-24.0, 24.0)
+    radius = rng.uniform(1.4, 2.4)
+    height = rng.uniform(0.5, 1.3)
+    theta = math.radians(azimuth)
+    eye = (radius * math.cos(theta), radius * math.sin(theta), height)
+    target = (0.0, 0.0, 0.0)
     return eye, target
 
 
@@ -329,7 +501,8 @@ def main() -> None:
             eye, target = apply_domain_randomization(scene, rng, i)
             bbox = subject_bbox(stage, subject_path)
         else:
-            eye, target = orbit_camera_for_bbox(bbox, i)
+            eye, target = apply_robot_randomization(scene, rng, i)
+            bbox = subject_bbox(stage, subject_path)
         camera_path = create_camera(stage, eye, target, f"Camera_{i}")
         frame_cube(viewport, camera_path, subject_path)
         if image_path.exists():
