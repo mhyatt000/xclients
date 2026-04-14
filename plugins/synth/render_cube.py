@@ -69,6 +69,12 @@ ROBOT_KEYPOINT_PATHS = [
     ("joint7", "Physics/joint7"),
     ("eef", "Physics/joint_eef"),
     ("tcp", "Physics/joint_tcp"),
+    ("gripper_drive", "Physics/drive_joint"),
+    ("gripper_left_finger", "Physics/left_finger_joint"),
+    ("gripper_left_inner", "Physics/left_inner_knuckle_joint"),
+    ("gripper_right_outer", "Physics/right_outer_knuckle_joint"),
+    ("gripper_right_finger", "Physics/right_finger_joint"),
+    ("gripper_right_inner", "Physics/right_inner_knuckle_joint"),
 ]
 
 
