@@ -50,6 +50,35 @@ def draw_label(img: np.ndarray, text: str, xy: tuple[float, float], color: tuple
     cv2.putText(img, text, origin, cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1, cv2.LINE_AA)
 
 
+def draw_world_frame(image: np.ndarray, world_to_camera: list[list[float]], k: list[list[float]]) -> None:
+    origin = project_world_to_pixel([0.0, 0.0, 0.0], world_to_camera, k)
+    x_tip = project_world_to_pixel([0.15, 0.0, 0.0], world_to_camera, k)
+    y_tip = project_world_to_pixel([0.0, 0.15, 0.0], world_to_camera, k)
+    z_tip = project_world_to_pixel([0.0, 0.0, 0.15], world_to_camera, k)
+
+    if origin is None:
+        return
+
+    origin_px = (int(round(origin[0])), int(round(origin[1])))
+    cv2.circle(image, origin_px, 6, (255, 255, 255), thickness=-1, lineType=cv2.LINE_AA)
+    cv2.circle(image, origin_px, 4, (0, 0, 255), thickness=-1, lineType=cv2.LINE_AA)
+    draw_label(image, "O", origin, (0, 0, 255))
+
+    axes = [
+        ("X", x_tip, (0, 0, 255)),
+        ("Y", y_tip, (0, 255, 0)),
+        ("Z", z_tip, (255, 0, 0)),
+    ]
+    for label, tip, color in axes:
+        if tip is None:
+            continue
+        tip_px = (int(round(tip[0])), int(round(tip[1])))
+        cv2.line(image, origin_px, tip_px, (255, 255, 255), 4, cv2.LINE_AA)
+        cv2.line(image, origin_px, tip_px, color, 2, cv2.LINE_AA)
+        cv2.circle(image, tip_px, 4, color, thickness=-1, lineType=cv2.LINE_AA)
+        draw_label(image, label, tip, color)
+
+
 def overlay_one(image_path: Path, json_path: Path, output_path: Path) -> None:
     image = cv2.imread(str(image_path), cv2.IMREAD_COLOR)
     if image is None:
@@ -57,6 +86,8 @@ def overlay_one(image_path: Path, json_path: Path, output_path: Path) -> None:
     payload = json.loads(json_path.read_text())
     k = payload["camera"]["intrinsics"]["K"]
     world_to_camera = payload["camera"]["extrinsics"]["world_to_camera"]
+
+    draw_world_frame(image, world_to_camera, k)
 
     for keypoint in payload.get("keypoints", []):
         label = keypoint["name"]
