@@ -38,7 +38,7 @@ VIEW_COUNT = 50
 ASSET_ROOM_X = 4.5
 ASSET_ROOM_Y_NEG = -4.5
 ASSET_ROOM_Y_POS = 4.5
-ASSET_ROOM_Z_MIN = 0.0
+ASSET_ROOM_Z_MIN = -3.0
 ASSET_ROOM_Z_MAX = 4.5
 ASSET_ROOM_MARGIN = 0.08
 ROBOT_LINK_PATHS = [
@@ -323,19 +323,25 @@ def create_asset_stage(usd_path: Path) -> tuple[Usd.Stage, dict[str, object]]:
     return stage, scene
 
 
+CAMERA_APERTURE = 20.955
+FOCAL_LENGTH_BASE = 24.0
+FOCAL_LENGTH_JITTER = 0.15
+
+
 def create_camera(
     stage: Usd.Stage,
     eye: tuple[float, float, float],
     target: tuple[float, float, float],
     name: str,
     rpy_deg: tuple[float, float, float] = (0.0, 0.0, 0.0),
+    focal_length: float = FOCAL_LENGTH_BASE,
 ) -> Sdf.Path:
     camera = UsdGeom.Camera.Define(stage, f"/World/{name}")
-    camera.CreateFocalLengthAttr(24.0)
-    camera.CreateHorizontalApertureAttr(20.955)
-    camera.CreateVerticalApertureAttr(20.955)
+    camera.CreateFocalLengthAttr(focal_length)
+    camera.CreateHorizontalApertureAttr(CAMERA_APERTURE)
+    camera.CreateVerticalApertureAttr(CAMERA_APERTURE)
     camera.CreateFocusDistanceAttr(700.0)
-    camera.CreateClippingRangeAttr(Gf.Vec2f(1.0, 10000.0))
+    camera.CreateClippingRangeAttr(Gf.Vec2f(1e-4, 10000.0))
     camera.MakeMatrixXform().Set(camera_xform(eye, target, rpy_deg))
     return camera.GetPath()
 
@@ -705,7 +711,6 @@ def robot_penetrates_room(bbox: Gf.Range3d) -> bool:
             float(mx[0]) > ASSET_ROOM_X - ASSET_ROOM_MARGIN,
             float(mn[1]) < ASSET_ROOM_Y_NEG + ASSET_ROOM_MARGIN,
             float(mx[1]) > ASSET_ROOM_Y_POS - ASSET_ROOM_MARGIN,
-            float(mn[2]) < ASSET_ROOM_Z_MIN - ASSET_ROOM_MARGIN,
             float(mx[2]) > ASSET_ROOM_Z_MAX - ASSET_ROOM_MARGIN,
         ]
     )
@@ -757,12 +762,13 @@ def sample_robot_camera(
     subject_path: Sdf.Path,
     rng: random.Random,
     view_index: int,
+    focal_length: float = FOCAL_LENGTH_BASE,
 ) -> tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float], int]:
     points = robot_world_points(stage, subject_path)
     target_name, target_point = rng.choice(points)
     azimuth = (360.0 * view_index / VIEW_COUNT) + rng.uniform(-55.0, 55.0)
     radius = rng.uniform(0.65, 2.4)
-    height = rng.uniform(0.15, 1.55)
+    height = rng.uniform(-0.9, 1.55)
     theta = math.radians(azimuth)
     eye = (radius * math.cos(theta), radius * math.sin(theta), height)
     target = (float(target_point[0]), float(target_point[1]), float(target_point[2]))
@@ -771,7 +777,7 @@ def sample_robot_camera(
         rng.uniform(-24.0, 24.0),
         rng.uniform(-24.0, 24.0),
     )
-    fx_fy = IMAGE_SIZE * 24.0 / 20.955
+    fx_fy = IMAGE_SIZE * focal_length / CAMERA_APERTURE
     intr = {"fx": fx_fy, "fy": fx_fy, "cx": IMAGE_SIZE / 2.0, "cy": IMAGE_SIZE / 2.0}
     world_to_camera = camera_xform(eye, target, rpy_deg).GetInverse()
     visible = 0
@@ -861,12 +867,16 @@ def main() -> None:
         json_path = out_dir / f"view_{i}.json"
         accepted = False
         reject_counts = {"room": 0, "self": 0, "camera": 0, "pose": 0, "dark": 0}
+        focal_length = FOCAL_LENGTH_BASE
         for attempt in range(40):
             rpy_deg = (0.0, 0.0, 0.0)
             if scene["mode"] == "cube":
                 eye, target = apply_domain_randomization(scene, rng, i)
                 bbox = subject_bbox(stage, subject_path)
             else:
+                focal_length = FOCAL_LENGTH_BASE * rng.uniform(
+                    1.0 - FOCAL_LENGTH_JITTER, 1.0 + FOCAL_LENGTH_JITTER
+                )
                 pose_ok = False
                 for _ in range(24):
                     apply_robot_randomization(scene, rng, i)
@@ -878,7 +888,13 @@ def main() -> None:
                     if robot_self_collision(points):
                         reject_counts["self"] += 1
                         continue
-                    eye, target, rpy_deg, visible_count = sample_robot_camera(stage, subject_path, rng, i)
+                    eye, target, rpy_deg, visible_count = sample_robot_camera(
+                        stage,
+                        subject_path,
+                        rng,
+                        i,
+                        focal_length=focal_length,
+                    )
                     if camera_collides_with_robot(eye, bbox, points):
                         reject_counts["camera"] += 1
                         continue
@@ -890,7 +906,9 @@ def main() -> None:
                 if not pose_ok:
                     reject_counts["pose"] += 1
                     continue
-            camera_path = create_camera(stage, eye, target, f"Camera_{i}", rpy_deg=rpy_deg)
+            camera_path = create_camera(
+                stage, eye, target, f"Camera_{i}", rpy_deg=rpy_deg, focal_length=focal_length
+            )
             frame_cube(viewport, camera_path, subject_path)
             if image_path.exists():
                 image_path.unlink()
@@ -910,6 +928,7 @@ def main() -> None:
             "scene_mode": scene["mode"],
             "camera_target_world": [float(target[0]), float(target[1]), float(target[2])],
             "camera_rpy_deg": [float(rpy_deg[0]), float(rpy_deg[1]), float(rpy_deg[2])],
+            "camera_focal_length": float(focal_length),
         }
         if scene["mode"] == "asset":
             sidecar.update(robot_keypoint_payload(stage, subject_path, camera_path, scene))
