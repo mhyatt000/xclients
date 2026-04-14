@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import os
 import random
@@ -33,7 +34,7 @@ from PIL import Image, ImageStat
 from pxr import Gf, Sdf, Usd, UsdGeom, UsdLux, UsdShade
 
 
-VIEW_COUNT = 5
+VIEW_COUNT = 10
 ROBOT_LINK_PATHS = [
     "Geometry/world/link_base/link1",
     "Geometry/world/link_base/link1/link2",
@@ -51,6 +52,20 @@ ROBOT_GRIPPER_PATHS = [
     "Geometry/world/link_base/link1/link2/link3/link4/link5/link6/link7/link_eef/xarm_gripper_base_link/right_outer_knuckle/right_finger",
     "Geometry/world/link_base/link1/link2/link3/link4/link5/link6/link7/link_eef/xarm_gripper_base_link/right_inner_knuckle",
 ]
+ROBOT_KEYPOINT_PATHS = [
+    ("base", "Geometry/world/link_base"),
+    ("joint1", "Geometry/world/link_base/link1"),
+    ("joint2", "Geometry/world/link_base/link1/link2"),
+    ("joint3", "Geometry/world/link_base/link1/link2/link3"),
+    ("joint4", "Geometry/world/link_base/link1/link2/link3/link4"),
+    ("joint5", "Geometry/world/link_base/link1/link2/link3/link4/link5"),
+    ("joint6", "Geometry/world/link_base/link1/link2/link3/link4/link5/link6"),
+    ("joint7", "Geometry/world/link_base/link1/link2/link3/link4/link5/link6/link7"),
+    ("eef", "Geometry/world/link_base/link1/link2/link3/link4/link5/link6/link7/link_eef"),
+    ("tcp", "Geometry/world/link_base/link1/link2/link3/link4/link5/link6/link7/link_eef/xarm_gripper_base_link/link_tcp"),
+]
+
+
 def pump(frames: int = 1) -> None:
     for _ in range(frames):
         APP.update()
@@ -292,6 +307,14 @@ def image_stats(path: Path) -> tuple[int, int, float]:
     return min(mins), max(maxs), mean
 
 
+def vec3d_tuple(vec: Gf.Vec3d) -> list[float]:
+    return [float(vec[0]), float(vec[1]), float(vec[2])]
+
+
+def mat4_list(mat: Gf.Matrix4d) -> list[list[float]]:
+    return [[float(mat[r][c]) for c in range(4)] for r in range(4)]
+
+
 def vec3(color: tuple[float, float, float]) -> Gf.Vec3f:
     return Gf.Vec3f(*color)
 
@@ -319,6 +342,19 @@ def rand_room_white(rng: random.Random, floor: bool = False) -> tuple[float, flo
     sat = rng.uniform(0.0, 0.08 if not floor else 0.12)
     val = rng.uniform(0.88, 0.99) if not floor else rng.uniform(0.72, 0.92)
     return colorsys.hsv_to_rgb(hue, sat, val)
+
+
+def rand_broad_color(rng: random.Random, floor: bool = False) -> tuple[float, float, float]:
+    hue = rng.random()
+    sat = rng.uniform(0.15, 0.95 if not floor else 0.75)
+    val = rng.uniform(0.28, 0.98 if not floor else 0.85)
+    return colorsys.hsv_to_rgb(hue, sat, val)
+
+
+def rand_scene_color(rng: random.Random, floor: bool = False) -> tuple[float, float, float]:
+    if rng.random() < 0.10:
+        return rand_room_white(rng, floor=floor)
+    return rand_broad_color(rng, floor=floor)
 
 
 def rand_neutral_metal(rng: random.Random) -> tuple[float, float, float]:
@@ -366,9 +402,9 @@ def apply_domain_randomization(scene: dict[str, object], rng: random.Random, vie
     cube_api.SetScale((cube_scale, cube_scale, cube_scale))
 
     cube_color = rand_vivid_color(rng)
-    ground_color = rand_room_white(rng, floor=True)
-    backdrop_color = rand_room_white(rng)
-    wall_color = rand_room_white(rng)
+    ground_color = rand_scene_color(rng, floor=True)
+    backdrop_color = rand_scene_color(rng)
+    wall_color = rand_scene_color(rng)
     cube_shader.GetInput("diffuseColor").Set(vec3(cube_color))
     cube_shader.GetInput("roughness").Set(rng.uniform(0.08, 0.55))
     cube_shader.GetInput("metallic").Set(rng.uniform(0.0, 0.15))
@@ -379,13 +415,13 @@ def apply_domain_randomization(scene: dict[str, object], rng: random.Random, vie
     wall_shader.GetInput("diffuseColor").Set(vec3(wall_color))
     wall_shader.GetInput("roughness").Set(rng.uniform(0.35, 0.7))
 
-    dome.GetIntensityAttr().Set(rng.uniform(700.0, 2200.0))
-    dome.GetColorAttr().Set(vec3(rand_room_white(rng)))
-    sun.GetIntensityAttr().Set(rng.uniform(9000.0, 22000.0))
-    sun.GetColorAttr().Set(vec3(rand_room_white(rng)))
+    dome.GetIntensityAttr().Set(rng.uniform(250.0, 3200.0))
+    dome.GetColorAttr().Set(vec3(rand_scene_color(rng)))
+    sun.GetIntensityAttr().Set(rng.uniform(4000.0, 24000.0))
+    sun.GetColorAttr().Set(vec3(rand_scene_color(rng)))
     sun_api.SetRotate((rng.uniform(230.0, 330.0), rng.uniform(-25.0, 25.0), 0.0))
-    fill.GetIntensityAttr().Set(rng.uniform(2500.0, 9000.0))
-    fill.GetColorAttr().Set(vec3(rand_room_white(rng)))
+    fill.GetIntensityAttr().Set(rng.uniform(1200.0, 12000.0))
+    fill.GetColorAttr().Set(vec3(rand_scene_color(rng)))
 
     azimuth = (360.0 * view_index / VIEW_COUNT) + rng.uniform(-18.0, 18.0)
     radius = rng.uniform(480.0, 620.0)
@@ -413,32 +449,37 @@ def apply_robot_randomization(scene: dict[str, object], rng: random.Random, view
     asset_api.SetScale((1.0, 1.0, 1.0))
 
     arm_limits = [170.0, 110.0, 165.0, 120.0, 165.0, 110.0, 175.0]
+    arm_angles: dict[str, float] = {}
     for index, (op, base_quat, _) in enumerate(link_orients[:7]):
-        op.Set(rotate_about_z(base_quat, rng.uniform(-arm_limits[index], arm_limits[index])))
+        angle = rng.uniform(-arm_limits[index], arm_limits[index])
+        op.Set(rotate_about_z(base_quat, angle))
+        arm_angles[f"joint{index + 1}"] = angle
 
     grip_angle = rng.uniform(0.0, 28.0)
     for op, base_quat, rel_path in link_orients[7:]:
         sign = -1.0 if "right" in rel_path else 1.0
         op.Set(rotate_about_z(base_quat, sign * grip_angle))
+    arm_angles["gripper_angle"] = grip_angle
 
     robot_shader.GetInput("diffuseColor").Set(vec3(rand_neutral_metal(rng) if rng.random() < 0.5 else rand_vivid_color(rng)))
     robot_shader.GetInput("roughness").Set(rng.uniform(0.12, 0.55))
     robot_shader.GetInput("metallic").Set(rng.uniform(0.0, 0.85))
 
-    ground_shader.GetInput("diffuseColor").Set(vec3(rand_room_white(rng, floor=True)))
-    ground_shader.GetInput("roughness").Set(rng.uniform(0.28, 0.68))
-    backdrop_shader.GetInput("diffuseColor").Set(vec3(rand_room_white(rng)))
-    backdrop_shader.GetInput("roughness").Set(rng.uniform(0.38, 0.72))
-    wall_shader.GetInput("diffuseColor").Set(vec3(rand_room_white(rng)))
-    wall_shader.GetInput("roughness").Set(rng.uniform(0.3, 0.68))
+    ground_shader.GetInput("diffuseColor").Set(vec3(rand_scene_color(rng, floor=True)))
+    ground_shader.GetInput("roughness").Set(rng.uniform(0.2, 0.82))
+    backdrop_shader.GetInput("diffuseColor").Set(vec3(rand_scene_color(rng)))
+    backdrop_shader.GetInput("roughness").Set(rng.uniform(0.25, 0.82))
+    wall_shader.GetInput("diffuseColor").Set(vec3(rand_scene_color(rng)))
+    wall_shader.GetInput("roughness").Set(rng.uniform(0.2, 0.8))
 
-    dome.GetIntensityAttr().Set(rng.uniform(800.0, 2400.0))
-    dome.GetColorAttr().Set(vec3(rand_room_white(rng)))
-    sun.GetIntensityAttr().Set(rng.uniform(9000.0, 24000.0))
-    sun.GetColorAttr().Set(vec3(rand_room_white(rng)))
+    dome_on = rng.random() < 0.7
+    dome.GetIntensityAttr().Set(rng.uniform(500.0, 3000.0) if dome_on else 0.0)
+    dome.GetColorAttr().Set(vec3(rand_scene_color(rng)))
+    sun.GetIntensityAttr().Set(rng.uniform(3500.0, 26000.0))
+    sun.GetColorAttr().Set(vec3(rand_scene_color(rng)))
     sun_api.SetRotate((rng.uniform(220.0, 330.0), rng.uniform(-25.0, 25.0), 0.0))
-    fill.GetIntensityAttr().Set(rng.uniform(3000.0, 10000.0))
-    fill.GetColorAttr().Set(vec3(rand_room_white(rng)))
+    fill.GetIntensityAttr().Set(rng.uniform(0.0, 12000.0))
+    fill.GetColorAttr().Set(vec3(rand_scene_color(rng)))
 
     azimuth = (360.0 * view_index / VIEW_COUNT) + rng.uniform(-24.0, 24.0)
     radius = rng.uniform(1.4, 2.4)
@@ -446,7 +487,98 @@ def apply_robot_randomization(scene: dict[str, object], rng: random.Random, view
     theta = math.radians(azimuth)
     eye = (radius * math.cos(theta), radius * math.sin(theta), height)
     target = (0.0, 0.0, 0.0)
+    scene["robot_joint_values"] = arm_angles
     return eye, target
+
+
+def camera_calibration(stage: Usd.Stage, camera_path: Sdf.Path) -> dict[str, object]:
+    camera = UsdGeom.Camera(stage.GetPrimAtPath(camera_path))
+    focal = float(camera.GetFocalLengthAttr().Get())
+    horiz_ap = float(camera.GetHorizontalApertureAttr().Get())
+    vert_ap = float(camera.GetVerticalApertureAttr().Get())
+    fx = IMAGE_SIZE * focal / horiz_ap
+    fy = IMAGE_SIZE * focal / vert_ap
+    cx = IMAGE_SIZE / 2.0
+    cy = IMAGE_SIZE / 2.0
+    xform_cache = UsdGeom.XformCache()
+    camera_to_world = xform_cache.GetLocalToWorldTransform(camera.GetPrim())
+    world_to_camera = camera_to_world.GetInverse()
+    return {
+        "intrinsics": {
+            "fx": fx,
+            "fy": fy,
+            "cx": cx,
+            "cy": cy,
+            "width": IMAGE_SIZE,
+            "height": IMAGE_SIZE,
+            "K": [
+                [fx, 0.0, cx],
+                [0.0, fy, cy],
+                [0.0, 0.0, 1.0],
+            ],
+        },
+        "extrinsics": {
+            "camera_to_world": mat4_list(camera_to_world),
+            "world_to_camera": mat4_list(world_to_camera),
+        },
+    }
+
+
+def project_point(world_to_camera: Gf.Matrix4d, point_world: Gf.Vec3d, intr: dict[str, object]) -> dict[str, object]:
+    cam = world_to_camera.Transform(point_world)
+    depth = -float(cam[2])
+    if depth <= 1e-6:
+        return {
+            "camera_xyz": vec3d_tuple(cam),
+            "pixel_xy": None,
+            "visible": False,
+        }
+    fx = float(intr["fx"])
+    fy = float(intr["fy"])
+    cx = float(intr["cx"])
+    cy = float(intr["cy"])
+    x = fx * (float(cam[0]) / depth) + cx
+    y = cy - fy * (float(cam[1]) / depth)
+    visible = 0.0 <= x < IMAGE_SIZE and 0.0 <= y < IMAGE_SIZE
+    return {
+        "camera_xyz": vec3d_tuple(cam),
+        "pixel_xy": [x, y],
+        "visible": visible,
+    }
+
+
+def robot_keypoint_payload(stage: Usd.Stage, subject_path: Sdf.Path, camera_path: Sdf.Path, scene: dict[str, object]) -> dict[str, object]:
+    calibration = camera_calibration(stage, camera_path)
+    intr = calibration["intrinsics"]
+    world_to_camera = UsdGeom.XformCache().GetLocalToWorldTransform(stage.GetPrimAtPath(camera_path)).GetInverse()
+    xform_cache = UsdGeom.XformCache()
+
+    keypoints = []
+    for name, rel_path in ROBOT_KEYPOINT_PATHS:
+        prim = stage.GetPrimAtPath(f"{subject_path.pathString}/{rel_path}")
+        if not prim.IsValid():
+            continue
+        point_world = xform_cache.GetLocalToWorldTransform(prim).ExtractTranslation()
+        projection = project_point(world_to_camera, point_world, intr)
+        keypoints.append(
+            {
+                "name": name,
+                "world_xyz": vec3d_tuple(point_world),
+                "camera_xyz": projection["camera_xyz"],
+                "pixel_xy": projection["pixel_xy"],
+                "visible": projection["visible"],
+            }
+        )
+
+    return {
+        "joints": scene.get("robot_joint_values", {}),
+        "keypoints": keypoints,
+        "camera": calibration,
+    }
+
+
+def write_sidecar(path: Path, payload: dict[str, object]) -> None:
+    path.write_text(json.dumps(payload, indent=2))
 
 
 def orbit_camera_for_bbox(bbox: Gf.Range3d, view_index: int) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
@@ -497,6 +629,7 @@ def main() -> None:
 
     for i in range(VIEW_COUNT):
         image_path = out_dir / f"view_{i}.png"
+        json_path = out_dir / f"view_{i}.json"
         if scene["mode"] == "cube":
             eye, target = apply_domain_randomization(scene, rng, i)
             bbox = subject_bbox(stage, subject_path)
@@ -510,6 +643,18 @@ def main() -> None:
         capture_viewport_to_file(viewport, os.fspath(image_path))
         wait_for_capture(image_path)
         mn, mx, mean = image_stats(image_path)
+        sidecar = {
+            "image_file": image_path.name,
+            "scene_mode": scene["mode"],
+            "camera_target_world": [float(target[0]), float(target[1]), float(target[2])],
+        }
+        if scene["mode"] == "asset":
+            sidecar.update(robot_keypoint_payload(stage, subject_path, camera_path, scene))
+        else:
+            sidecar["joints"] = {}
+            sidecar["keypoints"] = []
+            sidecar["camera"] = camera_calibration(stage, camera_path)
+        write_sidecar(json_path, sidecar)
         print(f"view_{i}: eye={tuple(round(v, 1) for v in eye)} target={tuple(round(v, 1) for v in target)} min={mn} max={mx} mean={mean:.2f}")
         if mx == 0 or mean < 8.0:
             raise RuntimeError(f"{image_path.name} is fully black")
