@@ -32,16 +32,16 @@ def project_world_to_pixel(world_xyz: list[float], world_to_camera: list[list[fl
 
 def draw_circle(img: np.ndarray, xy: tuple[float, float], color: tuple[int, int, int]) -> None:
     center = (int(round(xy[0])), int(round(xy[1])))
-    cv2.circle(img, center, 5, color, thickness=2, lineType=cv2.LINE_AA)
+    cv2.circle(img, center, 2, color, thickness=1, lineType=cv2.LINE_AA)
 
 
 def draw_cross(img: np.ndarray, xy: tuple[float, float], color: tuple[int, int, int]) -> None:
     center = (int(round(xy[0])), int(round(xy[1])))
-    size = 8
-    cv2.line(img, (center[0] - size, center[1] - size), (center[0] + size, center[1] + size), (255, 255, 255), 4, cv2.LINE_AA)
-    cv2.line(img, (center[0] - size, center[1] + size), (center[0] + size, center[1] - size), (255, 255, 255), 4, cv2.LINE_AA)
-    cv2.line(img, (center[0] - size, center[1] - size), (center[0] + size, center[1] + size), color, 2, cv2.LINE_AA)
-    cv2.line(img, (center[0] - size, center[1] + size), (center[0] + size, center[1] - size), color, 2, cv2.LINE_AA)
+    size = 3
+    cv2.line(img, (center[0] - size, center[1] - size), (center[0] + size, center[1] + size), (255, 255, 255), 2, cv2.LINE_AA)
+    cv2.line(img, (center[0] - size, center[1] + size), (center[0] + size, center[1] - size), (255, 255, 255), 2, cv2.LINE_AA)
+    cv2.line(img, (center[0] - size, center[1] - size), (center[0] + size, center[1] + size), color, 1, cv2.LINE_AA)
+    cv2.line(img, (center[0] - size, center[1] + size), (center[0] + size, center[1] - size), color, 1, cv2.LINE_AA)
 
 
 def draw_label(img: np.ndarray, text: str, xy: tuple[float, float], color: tuple[int, int, int]) -> None:

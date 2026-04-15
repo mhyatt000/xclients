@@ -433,6 +433,27 @@ def rand_scene_color(rng: random.Random, floor: bool = False) -> tuple[float, fl
     return rand_broad_color(rng, floor=floor)
 
 
+def rand_neutral_robot(rng: random.Random) -> tuple[float, float, float]:
+    hue = rng.random()
+    sat = rng.uniform(0.0, 0.18)
+    val = rng.uniform(0.55, 0.98)
+    return colorsys.hsv_to_rgb(hue, sat, val)
+
+
+def perturb_color(
+    rng: random.Random,
+    base: tuple[float, float, float],
+    hue_jitter: float = 0.06,
+    sat_jitter: float = 0.15,
+    val_jitter: float = 0.18,
+) -> tuple[float, float, float]:
+    h, s, v = colorsys.rgb_to_hsv(*base)
+    h = (h + rng.uniform(-hue_jitter, hue_jitter)) % 1.0
+    s = max(0.0, min(1.0, s + rng.uniform(-sat_jitter, sat_jitter)))
+    v = max(0.0, min(1.0, v + rng.uniform(-val_jitter, val_jitter)))
+    return colorsys.hsv_to_rgb(h, s, v)
+
+
 def rand_neutral_metal(rng: random.Random) -> tuple[float, float, float]:
     base = rng.uniform(0.45, 0.92)
     tint = rng.uniform(-0.06, 0.06)
@@ -537,7 +558,12 @@ def apply_robot_randomization(scene: dict[str, object], rng: random.Random, view
         op.Set(rotate_about_z(base_quat, sign * grip_angle))
     arm_angles["gripper_angle"] = grip_angle
 
-    robot_shader.GetInput("diffuseColor").Set(vec3(rand_neutral_metal(rng) if rng.random() < 0.5 else rand_vivid_color(rng)))
+    wall_color = rand_scene_color(rng)
+    if rng.random() < 0.5:
+        robot_color = rand_neutral_robot(rng)
+    else:
+        robot_color = perturb_color(rng, wall_color)
+    robot_shader.GetInput("diffuseColor").Set(vec3(robot_color))
     robot_shader.GetInput("roughness").Set(rng.uniform(0.12, 0.55))
     robot_shader.GetInput("metallic").Set(rng.uniform(0.0, 0.85))
 
@@ -545,7 +571,7 @@ def apply_robot_randomization(scene: dict[str, object], rng: random.Random, view
     ground_shader.GetInput("roughness").Set(rng.uniform(0.2, 0.82))
     backdrop_shader.GetInput("diffuseColor").Set(vec3(rand_scene_color(rng)))
     backdrop_shader.GetInput("roughness").Set(rng.uniform(0.25, 0.82))
-    wall_shader.GetInput("diffuseColor").Set(vec3(rand_scene_color(rng)))
+    wall_shader.GetInput("diffuseColor").Set(vec3(wall_color))
     wall_shader.GetInput("roughness").Set(rng.uniform(0.2, 0.8))
 
     dome_on = rng.random() < 0.7
