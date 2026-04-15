@@ -39,6 +39,8 @@ APP = SimulationApp(
     experience=os.fspath(KIT_EXPERIENCE),
 )
 
+import numpy as np
+
 import omni.kit.app
 import omni.usd
 from omni.kit.viewport.utility import capture_viewport_to_file, get_active_viewport
@@ -482,6 +484,136 @@ def rotate_about_z(base: Gf.Quatf, degrees: float) -> Gf.Quatf:
     return base * spin_f
 
 
+_ARM_FULL_LIMITS_DEG = [170.0, 110.0, 165.0, 120.0, 165.0, 110.0, 175.0]
+_ARM_TIGHT_LIMITS_DEG = [
+    (-120.0, 120.0),
+    (-90.0, 60.0),
+    (-150.0, 150.0),
+    (-11.0, 100.0),
+    (-150.0, 150.0),
+    (-90.0, 90.0),
+    (-175.0, 175.0),
+]
+_IK_SOLVER: dict | None = None
+_IK_SOLVER_FAILED = False
+
+
+def _get_ik_solver() -> dict | None:
+    global _IK_SOLVER, _IK_SOLVER_FAILED
+    if _IK_SOLVER is not None or _IK_SOLVER_FAILED:
+        return _IK_SOLVER
+    os.environ.setdefault("JAX_PLATFORMS", "cpu")
+    try:
+        import jax
+        import jax.numpy as jnp
+        import jaxlie
+        import jaxls
+        import pyroki as pk
+        import yourdfpy
+    except Exception as exc:
+        print(f"[joint-sampling] pyroki/jax unavailable, disabling IK mode: {exc}")
+        _IK_SOLVER_FAILED = True
+        return None
+
+    urdf_path = Path(__file__).resolve().parent / "xarm7_standalone.urdf"
+    urdf = yourdfpy.URDF.load(str(urdf_path))
+    robot = pk.Robot.from_urdf(urdf)
+    tcp_idx = jnp.asarray(robot.links.names.index("link_tcp"))
+    JointVar = robot.joint_var_cls
+
+    @jax.jit
+    def _solve(pos, wxyz):
+        target_pose = jaxlie.SE3.from_rotation_and_translation(jaxlie.SO3(wxyz), pos)
+        jv = JointVar(0)
+        costs = [
+            pk.costs.pose_cost(robot, jv, target_pose, tcp_idx, pos_weight=5.0, ori_weight=1.0),
+            pk.costs.limit_cost(robot, jv, weight=100.0),
+        ]
+        sol = jaxls.LeastSquaresProblem(costs, [jv]).analyze().solve(verbose=False)
+        q = sol[jv]
+        fk = robot.forward_kinematics(q)
+        achieved = jaxlie.SE3(fk[tcp_idx])
+        pos_err = jnp.linalg.norm(achieved.translation() - pos)
+        return q, pos_err
+
+    _IK_SOLVER = {"solve": _solve, "jnp": jnp}
+    return _IK_SOLVER
+
+
+def _quat_wxyz_from_matrix(R: np.ndarray) -> np.ndarray:
+    tr = R[0, 0] + R[1, 1] + R[2, 2]
+    if tr > 0.0:
+        s = math.sqrt(tr + 1.0) * 2.0
+        return np.array([0.25 * s, (R[2, 1] - R[1, 2]) / s, (R[0, 2] - R[2, 0]) / s, (R[1, 0] - R[0, 1]) / s])
+    if R[0, 0] > R[1, 1] and R[0, 0] > R[2, 2]:
+        s = math.sqrt(1.0 + R[0, 0] - R[1, 1] - R[2, 2]) * 2.0
+        return np.array([(R[2, 1] - R[1, 2]) / s, 0.25 * s, (R[0, 1] + R[1, 0]) / s, (R[0, 2] + R[2, 0]) / s])
+    if R[1, 1] > R[2, 2]:
+        s = math.sqrt(1.0 + R[1, 1] - R[0, 0] - R[2, 2]) * 2.0
+        return np.array([(R[0, 2] - R[2, 0]) / s, (R[0, 1] + R[1, 0]) / s, 0.25 * s, (R[1, 2] + R[2, 1]) / s])
+    s = math.sqrt(1.0 + R[2, 2] - R[0, 0] - R[1, 1]) * 2.0
+    return np.array([(R[1, 0] - R[0, 1]) / s, (R[0, 2] + R[2, 0]) / s, (R[1, 2] + R[2, 1]) / s, 0.25 * s])
+
+
+def _sample_joints_tight(rng: random.Random) -> list[float]:
+    return [rng.uniform(lo, hi) for lo, hi in _ARM_TIGHT_LIMITS_DEG]
+
+
+def _sample_joints_full(rng: random.Random) -> list[float]:
+    return [rng.uniform(-lim, lim) for lim in _ARM_FULL_LIMITS_DEG]
+
+
+def _sample_joints_ik(rng: random.Random) -> list[float] | None:
+    solver = _get_ik_solver()
+    if solver is None:
+        return None
+    jnp = solver["jnp"]
+
+    tx = rng.uniform(-0.55, 0.55)
+    ty = rng.uniform(-0.55, 0.55)
+    tz = rng.uniform(0.10, 0.85)
+
+    for _ in range(8):
+        v = np.array([rng.gauss(0.0, 1.0), rng.gauss(0.0, 1.0), rng.gauss(0.0, 1.0)])
+        n = float(np.linalg.norm(v))
+        if n > 1e-6 and (v[2] / n) < 0.3:
+            d = v / n
+            break
+    else:
+        d = np.array([0.0, 0.0, -1.0])
+
+    ref = np.array([0.0, 0.0, 1.0]) if abs(d[2]) < 0.95 else np.array([1.0, 0.0, 0.0])
+    x_axis = np.cross(ref, d)
+    x_axis /= np.linalg.norm(x_axis)
+    y_axis = np.cross(d, x_axis)
+    roll = rng.uniform(-math.pi, math.pi)
+    c, s = math.cos(roll), math.sin(roll)
+    x_r = c * x_axis + s * y_axis
+    y_r = -s * x_axis + c * y_axis
+    R = np.stack([x_r, y_r, d], axis=1)
+    wxyz = _quat_wxyz_from_matrix(R)
+
+    q, err = solver["solve"](jnp.asarray([tx, ty, tz], dtype=jnp.float32),
+                             jnp.asarray(wxyz, dtype=jnp.float32))
+    if float(err) > 0.02:
+        return None
+    q_np = np.asarray(q)[:7]
+    return [math.degrees(float(a)) for a in q_np]
+
+
+def sample_arm_joint_angles(rng: random.Random) -> tuple[list[float], str]:
+    """45% tight / 45% IK / 10% full random; falls back to tight if IK fails."""
+    r = rng.random()
+    if r < 0.45:
+        return _sample_joints_tight(rng), "tight"
+    if r < 0.90:
+        angles = _sample_joints_ik(rng)
+        if angles is not None:
+            return angles, "ik"
+        return _sample_joints_tight(rng), "tight_ik_fallback"
+    return _sample_joints_full(rng), "full"
+
+
 def apply_domain_randomization(scene: dict[str, object], rng: random.Random, view_index: int) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
     if scene["mode"] != "cube":
         raise RuntimeError("Cube randomization called for non-cube scene")
@@ -557,12 +689,13 @@ def apply_robot_randomization(scene: dict[str, object], rng: random.Random, view
     asset_api.SetRotate((0.0, 0.0, 0.0))
     asset_api.SetScale((1.0, 1.0, 1.0))
 
-    arm_limits = [170.0, 110.0, 165.0, 120.0, 165.0, 110.0, 175.0]
+    angles_deg, sample_mode = sample_arm_joint_angles(rng)
     arm_angles: dict[str, float] = {}
     for index, (op, base_quat, _) in enumerate(link_orients[:7]):
-        angle = rng.uniform(-arm_limits[index], arm_limits[index])
+        angle = angles_deg[index]
         op.Set(rotate_about_z(base_quat, angle))
         arm_angles[f"joint{index + 1}"] = angle
+    arm_angles["sample_mode"] = sample_mode
 
     grip_angle = rng.uniform(0.0, 28.0)
     for op, base_quat, rel_path in link_orients[7:]:
@@ -899,13 +1032,15 @@ def apply_scene_semantics(stage: Usd.Stage, scene: dict[str, object]) -> None:
 class Config:
     """Config for rendering cube / robot views."""
 
-    usd_path: Path | None = None  # optional USD asset to load instead of the default cube scene
+    usd_path: Path | None = Path(__file__).resolve().parent / "xarm7_standalone_usd" / "UF_ROBOT.usda"  # USD asset to load; defaults to xarm7 robot. Set to None/omit to fall back to cube scene.
     seed: int = 20260413  # RNG seed for deterministic domain randomization
     num_views: int = VIEW_COUNT  # number of views to render
     output_dir: Path = Path("renders/cube_views")  # directory where renders and sidecars are written
     no_clean: bool = False  # keep existing output_dir contents instead of wiping it before rendering
     image_width: int = 512  # rendered image width in pixels (480x640 presets below)
     image_height: int = 512  # rendered image height in pixels
+    fx_min: float = 450.0  # min fx=fy (pixels) sampled per view; back-solves focal length from image_width
+    fx_max: float = 900.0  # max fx=fy (pixels) sampled per view
 
 
 def main(cfg: Config) -> None:
@@ -951,9 +1086,8 @@ def main(cfg: Config) -> None:
                 eye, target = apply_domain_randomization(scene, rng, i)
                 bbox = subject_bbox(stage, subject_path)
             else:
-                focal_length = FOCAL_LENGTH_BASE * rng.uniform(
-                    1.0 - FOCAL_LENGTH_JITTER, 1.0 + FOCAL_LENGTH_JITTER
-                )
+                fx_sample = rng.uniform(cfg.fx_min, cfg.fx_max)
+                focal_length = fx_sample * CAMERA_APERTURE / IMAGE_WIDTH
                 pose_ok = False
                 for _ in range(24):
                     apply_robot_randomization(scene, rng, i)
