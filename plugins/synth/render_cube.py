@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import argparse
 import json
 import math
 import os
 import random
 import shutil
+import sys
 import colorsys
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,14 +17,22 @@ import isaacsim
 from isaacsim.simulation_app import SimulationApp
 
 
+def _preparse_image_dims() -> tuple[int, int]:
+    p = argparse.ArgumentParser(add_help=False)
+    p.add_argument("--image-width", type=int, default=512)
+    p.add_argument("--image-height", type=int, default=512)
+    ns, _ = p.parse_known_args(sys.argv[1:])
+    return ns.image_width, ns.image_height
+
+
 KIT_EXPERIENCE = Path(isaacsim.__file__).resolve().parent / "kit/apps/omni.app.hydra.kit"
-IMAGE_SIZE = 512
+IMAGE_WIDTH, IMAGE_HEIGHT = _preparse_image_dims()
 
 APP = SimulationApp(
     {
         "headless": True,
-        "width": IMAGE_SIZE,
-        "height": IMAGE_SIZE,
+        "width": IMAGE_WIDTH,
+        "height": IMAGE_HEIGHT,
         "renderer": "RayTracedLighting",
         "multi_gpu": False,
     },
@@ -341,7 +351,7 @@ def create_camera(
     camera = UsdGeom.Camera.Define(stage, f"/World/{name}")
     camera.CreateFocalLengthAttr(focal_length)
     camera.CreateHorizontalApertureAttr(CAMERA_APERTURE)
-    camera.CreateVerticalApertureAttr(CAMERA_APERTURE)
+    camera.CreateVerticalApertureAttr(CAMERA_APERTURE * IMAGE_HEIGHT / IMAGE_WIDTH)
     camera.CreateFocusDistanceAttr(700.0)
     camera.CreateClippingRangeAttr(Gf.Vec2f(1e-4, 10000.0))
     camera.MakeMatrixXform().Set(camera_xform(eye, target, rpy_deg))
@@ -600,10 +610,10 @@ def camera_calibration(stage: Usd.Stage, camera_path: Sdf.Path) -> dict[str, obj
     focal = float(camera.GetFocalLengthAttr().Get())
     horiz_ap = float(camera.GetHorizontalApertureAttr().Get())
     vert_ap = float(camera.GetVerticalApertureAttr().Get())
-    fx = IMAGE_SIZE * focal / horiz_ap
-    fy = IMAGE_SIZE * focal / vert_ap
-    cx = IMAGE_SIZE / 2.0
-    cy = IMAGE_SIZE / 2.0
+    fx = IMAGE_WIDTH * focal / horiz_ap
+    fy = IMAGE_HEIGHT * focal / vert_ap
+    cx = IMAGE_WIDTH / 2.0
+    cy = IMAGE_HEIGHT / 2.0
     xform_cache = UsdGeom.XformCache()
     camera_to_world = xform_cache.GetLocalToWorldTransform(camera.GetPrim())
     world_to_camera = camera_to_world.GetInverse()
@@ -613,8 +623,8 @@ def camera_calibration(stage: Usd.Stage, camera_path: Sdf.Path) -> dict[str, obj
             "fy": fy,
             "cx": cx,
             "cy": cy,
-            "width": IMAGE_SIZE,
-            "height": IMAGE_SIZE,
+            "width": IMAGE_WIDTH,
+            "height": IMAGE_HEIGHT,
             "K": [
                 [fx, 0.0, cx],
                 [0.0, fy, cy],
@@ -643,7 +653,7 @@ def project_point(world_to_camera: Gf.Matrix4d, point_world: Gf.Vec3d, intr: dic
     cy = float(intr["cy"])
     x = fx * (float(cam[0]) / depth) + cx
     y = cy - fy * (float(cam[1]) / depth)
-    visible = 0.0 <= x < IMAGE_SIZE and 0.0 <= y < IMAGE_SIZE
+    visible = 0.0 <= x < IMAGE_WIDTH and 0.0 <= y < IMAGE_HEIGHT
     return {
         "camera_xyz": vec3d_tuple(cam),
         "pixel_xy": [x, y],
@@ -805,8 +815,8 @@ def sample_robot_camera(
         rng.uniform(-24.0, 24.0),
         rng.uniform(-24.0, 24.0),
     )
-    fx_fy = IMAGE_SIZE * focal_length / CAMERA_APERTURE
-    intr = {"fx": fx_fy, "fy": fx_fy, "cx": IMAGE_SIZE / 2.0, "cy": IMAGE_SIZE / 2.0}
+    fx_fy = IMAGE_WIDTH * focal_length / CAMERA_APERTURE
+    intr = {"fx": fx_fy, "fy": fx_fy, "cx": IMAGE_WIDTH / 2.0, "cy": IMAGE_HEIGHT / 2.0}
     world_to_camera = camera_xform(eye, target, rpy_deg).GetInverse()
     visible = 0
     for _, point in points:
@@ -894,6 +904,8 @@ class Config:
     num_views: int = VIEW_COUNT  # number of views to render
     output_dir: Path = Path("renders/cube_views")  # directory where renders and sidecars are written
     no_clean: bool = False  # keep existing output_dir contents instead of wiping it before rendering
+    image_width: int = 512  # rendered image width in pixels (480x640 presets below)
+    image_height: int = 512  # rendered image height in pixels
 
 
 def main(cfg: Config) -> None:
