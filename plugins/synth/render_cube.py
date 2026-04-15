@@ -936,13 +936,22 @@ def sample_robot_camera(
     focal_length: float = FOCAL_LENGTH_BASE,
 ) -> tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float], int]:
     points = robot_world_points(stage, subject_path)
-    target_name, target_point = rng.choice(points)
+    _, lookat_point = rng.choice(points)
+    _, sphere_point = rng.choice(points)
+    r_min, r_max = 0.65, 2.4
+    radius = rng.uniform(r_min, r_max)
+    sin_el_min = math.sin(math.radians(-25.0))
+    sin_el_max = math.sin(math.radians(75.0))
+    sin_el = rng.uniform(sin_el_min, sin_el_max)
+    cos_el = math.sqrt(max(0.0, 1.0 - sin_el * sin_el))
     azimuth = (360.0 * view_index / VIEW_COUNT) + rng.uniform(-55.0, 55.0)
-    radius = rng.uniform(0.65, 2.4)
-    height = rng.uniform(-0.9, 1.55)
     theta = math.radians(azimuth)
-    eye = (radius * math.cos(theta), radius * math.sin(theta), height)
-    target = (float(target_point[0]), float(target_point[1]), float(target_point[2]))
+    eye = (
+        float(sphere_point[0]) + radius * cos_el * math.cos(theta),
+        float(sphere_point[1]) + radius * cos_el * math.sin(theta),
+        float(sphere_point[2]) + radius * sin_el,
+    )
+    target = (float(lookat_point[0]), float(lookat_point[1]), float(lookat_point[2]))
     rpy_deg = (
         rng.uniform(-40.0, 40.0),
         rng.uniform(-24.0, 24.0),
