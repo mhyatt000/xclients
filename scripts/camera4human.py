@@ -191,7 +191,6 @@ def hstack(imgs: list[np.ndarray]) -> np.ndarray:
 
 
 def wait_for_pedal(pedal: FootPedalRunner, cams: dict[int, MyCamera], show: bool):
-    pprint("press pedal (or s) to start recording")
 
     def border(img, color):
         img = cv2.copyMakeBorder(img, 10, 10, 10, 10, cv2.BORDER_CONSTANT, value=color)
@@ -281,6 +280,7 @@ def main(cfg: Config):
     wait_for_pedal(pedal, cams, True)
 
     print(cams)
+    pprint("Press leftmost pedal or s to start and end recording")
     for ep in tqdm(range(cfg.episodes), leave=False):
         frames = {k: [] for k in cams}
         while pedal.value[0] == 0:
