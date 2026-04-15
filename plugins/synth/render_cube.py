@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-import argparse
 import json
 import math
 import os
 import random
 import shutil
 import colorsys
+from dataclasses import dataclass
 from pathlib import Path
+
+import tyro
 
 import isaacsim
 from isaacsim.simulation_app import SimulationApp
@@ -857,21 +859,54 @@ def orbit_camera_for_bbox(bbox: Gf.Range3d, view_index: int) -> tuple[tuple[floa
     return eye, target
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("usd_path", nargs="?", default=None)
-    return parser.parse_args()
+def tag_semantics(stage: Usd.Stage, prim_path: str, label: str) -> None:
+    try:
+        from pxr import Semantics  # type: ignore
+    except Exception:
+        return
+    prim = stage.GetPrimAtPath(prim_path)
+    if not prim.IsValid():
+        return
+    sem = Semantics.SemanticsAPI.Apply(prim, "Semantics")
+    sem.CreateSemanticTypeAttr("class")
+    sem.CreateSemanticDataAttr(label)
 
 
-def main() -> None:
-    args = parse_args()
-    out_dir = Path("renders/cube_views").resolve()
-    if out_dir.exists():
+def apply_scene_semantics(stage: Usd.Stage, scene: dict[str, object]) -> None:
+    if scene["mode"] == "asset":
+        subject_path = scene["subject_path"]  # type: ignore[assignment]
+        tag_semantics(stage, f"{subject_path}", "robot")
+    else:
+        tag_semantics(stage, "/World/Cube", "cube")
+    tag_semantics(stage, "/World/Ground", "ground")
+    tag_semantics(stage, "/World/Backdrop", "backdrop")
+    tag_semantics(stage, "/World/LeftWall", "wall")
+    tag_semantics(stage, "/World/RightWall", "wall")
+    tag_semantics(stage, "/World/Ceiling", "wall")
+
+
+@dataclass
+class Config:
+    """Config for rendering cube / robot views."""
+
+    usd_path: Path | None = None  # optional USD asset to load instead of the default cube scene
+    seed: int = 20260413  # RNG seed for deterministic domain randomization
+    num_views: int = VIEW_COUNT  # number of views to render
+    output_dir: Path = Path("renders/cube_views")  # directory where renders and sidecars are written
+    no_clean: bool = False  # keep existing output_dir contents instead of wiping it before rendering
+
+
+def main(cfg: Config) -> None:
+    global VIEW_COUNT
+    VIEW_COUNT = cfg.num_views
+
+    out_dir = cfg.output_dir.resolve()
+    if out_dir.exists() and not cfg.no_clean:
         shutil.rmtree(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    print(f"Writing to {out_dir}")
+    print(f"Writing to {out_dir} (seed={cfg.seed}, num_views={VIEW_COUNT})")
 
-    usd_path = Path(args.usd_path).resolve() if args.usd_path else None
+    usd_path = cfg.usd_path.resolve() if cfg.usd_path else None
     if usd_path is not None:
         if not usd_path.exists():
             raise FileNotFoundError(usd_path)
@@ -880,13 +915,17 @@ def main() -> None:
         stage, scene = create_cube_stage()
 
     subject_path: Sdf.Path = scene["subject_path"]  # type: ignore[assignment]
+    apply_scene_semantics(stage, scene)
+
     viewport = get_active_viewport()
     if viewport is None:
         raise RuntimeError("No active viewport available")
 
     pump(32)
-    rng = random.Random(20260413)
+    rng = random.Random(cfg.seed)
     bbox = subject_bbox(stage, subject_path)
+
+    total_rejects = {"room": 0, "self": 0, "camera": 0, "pose": 0, "dark": 0}
 
     for i in range(VIEW_COUNT):
         image_path = out_dir / f"view_{i}.png"
@@ -947,6 +986,8 @@ def main() -> None:
                 accepted = True
                 break
             reject_counts["dark"] += 1
+        for key, val in reject_counts.items():
+            total_rejects[key] += val
         if not accepted:
             raise RuntimeError(f"Failed to render a usable frame for view_{i}: {reject_counts}")
         sidecar = {
@@ -955,6 +996,7 @@ def main() -> None:
             "camera_target_world": [float(target[0]), float(target[1]), float(target[2])],
             "camera_rpy_deg": [float(rpy_deg[0]), float(rpy_deg[1]), float(rpy_deg[2])],
             "camera_focal_length": float(focal_length),
+            "reject_counts": reject_counts,
         }
         if scene["mode"] == "asset":
             sidecar.update(robot_keypoint_payload(stage, subject_path, camera_path, scene))
@@ -964,10 +1006,14 @@ def main() -> None:
             sidecar["keypoints"] = []
             sidecar["camera"] = camera_calibration(stage, camera_path)
         write_sidecar(json_path, sidecar)
-        print(f"view_{i}: eye={tuple(round(v, 1) for v in eye)} target={tuple(round(v, 1) for v in target)} min={mn} max={mx} mean={mean:.2f}")
-        pump(4)
+        print(
+            f"view_{i}: eye={tuple(round(v, 1) for v in eye)} "
+            f"target={tuple(round(v, 1) for v in target)} "
+            f"min={mn} max={mx} mean={mean:.2f} rejects={reject_counts}"
+        )
 
     print(f"Wrote renders to {out_dir}")
+    print(f"Total rejects across {VIEW_COUNT} views: {total_rejects}")
     stage = None
     viewport = None
     omni.usd.get_context().close_stage()
@@ -975,4 +1021,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    main(tyro.cli(Config))
