@@ -19,11 +19,15 @@ from xclients.core.run.scene import RerunScene
 
 logging.basicConfig(level=logging.INFO)
 
+GL2CV = np.diag([1.0, -1.0, -1.0, 1.0])
+
 
 @dataclass
 class Config:
     host: str = "127.0.0.1"
     port: int = 8000
+    da_host: str | None = None
+    da_port: int | None = None
     camera: str | int = 0  # OpenCV camera index to poll from
     camera_name: str = "dream"  # Rerun camera entity name
     image_size: int = 200  # Resize frames to a square image before sending to Dream
@@ -40,12 +44,16 @@ class Config:
     limit: int | None = None
     history: int = 100  # Number of recent camera centers to keep as 3D points
     max_camera_distance: float = 3.0  # Skip Dream poses whose camera center is farther than this many meters
+    depth_stride: int = 4  # Subsample factor when converting depth maps to 3D points
+    max_depth: float = 2.0  # Maximum depth in meters to include in the point cloud
     show: bool = False  # Also show the local OpenCV window
 
     def __post_init__(self) -> None:
         self.urdf = self.urdf.expanduser().resolve()
         if self.rrd_path is not None:
             self.rrd_path = Path(self.rrd_path).expanduser().resolve()
+        if (self.da_host is None) != (self.da_port is None):
+            raise ValueError("Pass both da_host and da_port, or neither.")
 
 
 def scale_intrinsics(k: np.ndarray, sx: float, sy: float) -> np.ndarray:
@@ -100,6 +108,29 @@ def draw_output_image(image: np.ndarray | None) -> np.ndarray | None:
     return arr
 
 
+def draw_depth_image(depth: np.ndarray | None) -> np.ndarray | None:
+    if depth is None:
+        return None
+
+    arr = np.asarray(depth)
+    arr = np.squeeze(arr)
+    if arr.ndim != 2:
+        raise ValueError(f"Expected depth with shape (h, w) or singleton-batched variants, got {arr.shape}")
+
+    arr = arr.astype(np.float32)
+    valid = np.isfinite(arr) & (arr > 0.0)
+    if not np.any(valid):
+        return np.zeros((*arr.shape, 3), dtype=np.uint8)
+
+    lo = float(arr[valid].min())
+    hi = float(arr[valid].max())
+    norm = np.zeros_like(arr, dtype=np.float32)
+    if hi > lo:
+        norm[valid] = (arr[valid] - lo) / (hi - lo)
+    depth_u8 = np.clip(norm * 255.0, 0.0, 255.0).astype(np.uint8)
+    return cv2.applyColorMap(depth_u8, cv2.COLORMAP_TURBO)
+
+
 def ensure_bgr_image(image: np.ndarray | None) -> np.ndarray | None:
     if image is None:
         return None
@@ -132,6 +163,7 @@ def send_dream_blueprint(scene: RerunScene, camera_name: str) -> None:
                     rrb.Spatial2DView(origin=cam_root, contents=["+ $origin/image"]),
                     rrb.Spatial2DView(origin=cam_root, contents=["+ $origin/mask"]),
                     rrb.Spatial2DView(origin=cam_root, contents=["+ $origin/raster"]),
+                    rrb.Spatial2DView(origin=cam_root, contents=["+ $origin/depth"]),
                 ]
             ),
             column_shares=[4, 1],
@@ -243,8 +275,64 @@ def history_colors(count: int) -> np.ndarray:
     return np.round(colors).astype(np.uint8)
 
 
+def first_array(value: object) -> np.ndarray | None:
+    if value is None:
+        return None
+    arr = np.asarray(value)
+    while arr.ndim > 2 and arr.shape[0] == 1:
+        arr = arr[0]
+    return arr
+
+
+def unproject_depth_points(
+    depth: np.ndarray,
+    intrinsics: np.ndarray,
+    bgr_image: np.ndarray,
+    *,
+    stride: int,
+    max_depth: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    z = np.asarray(depth, dtype=np.float32)
+    if z.ndim != 2:
+        raise ValueError(f"Expected depth map with shape (h, w), got {z.shape}")
+
+    k = np.asarray(intrinsics, dtype=np.float32)
+    if k.shape != (3, 3):
+        raise ValueError(f"Expected intrinsics with shape (3, 3), got {k.shape}")
+
+    if bgr_image.shape[:2] != z.shape:
+        bgr_image = cv2.resize(bgr_image, (z.shape[1], z.shape[0]), interpolation=cv2.INTER_LINEAR)
+
+    step = max(int(stride), 1)
+    ys, xs = np.mgrid[0 : z.shape[0] : step, 0 : z.shape[1] : step]
+    zs = z[::step, ::step]
+
+    valid = np.isfinite(zs) & (zs > 0.0)
+    if max_depth > 0.0:
+        valid &= zs <= float(max_depth)
+    if not np.any(valid):
+        return np.zeros((0, 3), dtype=np.float32), np.zeros((0, 3), dtype=np.uint8)
+
+    xs = xs[valid].astype(np.float32)
+    ys = ys[valid].astype(np.float32)
+    zs = zs[valid].astype(np.float32)
+
+    fx = float(k[0, 0])
+    fy = float(k[1, 1])
+    cx = float(k[0, 2])
+    cy = float(k[1, 2])
+    x = (xs - cx) * zs / fx
+    y = (ys - cy) * zs / fy
+    points = np.stack([x, y, zs], axis=1)
+
+    colors_bgr = bgr_image[::step, ::step][valid]
+    colors_rgb = colors_bgr[:, ::-1].astype(np.uint8)
+    return points, colors_rgb
+
+
 def main(cfg: Config) -> None:
     client = Client(cfg.host, cfg.port)
+    da_client = Client(cfg.da_host, cfg.da_port) if cfg.da_host is not None and cfg.da_port is not None else None
     cap = cv2.VideoCapture(cfg.camera)
     if not cap.isOpened():
         raise RuntimeError(f"Failed to open camera {cfg.camera}")
@@ -259,6 +347,8 @@ def main(cfg: Config) -> None:
     )
     mask_path = f"{scene.world_path}/cam/{cfg.camera_name}/mask"
     raster_path = f"{scene.world_path}/cam/{cfg.camera_name}/raster"
+    depth_path = f"{scene.world_path}/cam/{cfg.camera_name}/depth"
+    depth_points_path = f"{scene.world_path}/scene/{cfg.camera_name}_depth_points"
     scene.set_cameras([cfg.camera_name])
     send_dream_blueprint(scene, cfg.camera_name)
 
@@ -300,22 +390,54 @@ def main(cfg: Config) -> None:
         }
         out = client.step(payload)
 
+        da_out = None
+        if da_client is not None:
+            da_payload = {
+                "image": [frame],
+                "intrinsics": np.array([k_orig], dtype=np.float32),
+            }
+            da_out = da_client.step(da_payload)
+
         mask = draw_mask(out.get("mask") if out else None)
         raster_raw = out.get("raster_image") if out else None
         if raster_raw is None and out is not None:
             raster_raw = out.get("rast_image")
         raster = draw_output_image(raster_raw)
+        depth_raw = first_array(da_out.get("depth") if da_out else None)
+        depth_vis = draw_depth_image(depth_raw)
         if mask is not None:
             log_aux_image(scene, cfg.camera_name, mask_path, ensure_bgr_image(mask))
         if raster is not None:
             log_aux_image(scene, cfg.camera_name, raster_path, ensure_bgr_image(raster))
+        if depth_vis is not None:
+            log_aux_image(scene, cfg.camera_name, depth_path, depth_vis)
+
+        if depth_raw is not None:
+            depth_intr = first_array(da_out.get("intrinsics") if da_out else None)
+            if depth_intr is None:
+                depth_intr = k_orig
+            try:
+                points_cam, colors_rgb = unproject_depth_points(
+                    depth_raw,
+                    np.asarray(depth_intr, dtype=np.float32),
+                    frame,
+                    stride=cfg.depth_stride,
+                    max_depth=cfg.max_depth,
+                )
+                scene.log_points3d(
+                    points_cam,
+                    colors=colors_rgb,
+                    radii=0.02,
+                    path=depth_points_path,
+                    parent_frame=f"{scene.world_path}/cam/{cfg.camera_name}",
+                )
+            except ValueError as exc:
+                logging.warning("Skipping DA depth point cloud at step %d: %s", step, exc)
 
         pose = coerce_w2c_pose(out.get("w2c") if out else None)
         if pose is not None:
             calibration = dream_camera_calibration(k_orig, pose, w, h)
             try:
-                # Dream returns camera pose relative to the robot/world in RDF; convert to the
-                # scene's FLU world frame the same way the static calibration loader does.
                 calibration["extrinsics"] = xctf.RDF2FLU @ pose
 
                 camera_position = camera_world_position(np.asarray(calibration["extrinsics"], dtype=np.float64))
