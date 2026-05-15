@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass, field
 import logging
 from pathlib import Path
@@ -36,6 +37,8 @@ class Config:
     spawn: bool = True
     rrd_path: Path | None = None
     limit: int | None = None
+    history: int = 100  # Number of recent camera centers to keep as 3D points
+    max_camera_distance: float = 3.0  # Skip Dream poses whose camera center is farther than this many meters
     show: bool = False  # Also show the local OpenCV window
 
     def __post_init__(self) -> None:
@@ -51,6 +54,65 @@ def scale_intrinsics(k: np.ndarray, sx: float, sy: float) -> np.ndarray:
     scaled[0, 2] *= sx
     scaled[1, 2] *= sy
     return scaled
+
+
+def draw_mask(mask: np.ndarray | None) -> np.ndarray | None:
+    if mask is None:
+        return None
+
+    arr = np.asarray(mask)
+    arr = np.squeeze(arr)
+    if arr.ndim != 2:
+        raise ValueError(f"Expected mask with shape (h, w) or (1, h, w), got {arr.shape}")
+
+    if arr.dtype != np.uint8:
+        arr = arr.astype(np.float32)
+        maxv = float(arr.max()) if arr.size else 0.0
+        if maxv <= 1.0:
+            arr = arr * 255.0
+        arr = np.clip(arr, 0, 255).astype(np.uint8)
+
+    return arr
+
+
+def draw_output_image(image: np.ndarray | None) -> np.ndarray | None:
+    if image is None:
+        return None
+
+    arr = np.asarray(image)
+    if arr.ndim >= 4:
+        arr = arr[0]
+    if arr.ndim == 3 and arr.shape[0] in (1, 3) and arr.shape[-1] not in (1, 3):
+        arr = np.moveaxis(arr, 0, -1)
+    if arr.ndim == 3 and arr.shape[-1] == 1:
+        arr = arr[..., 0]
+    if arr.ndim not in (2, 3):
+        raise ValueError(f"Expected raster image with shape (h, w), (h, w, c), or batched variants, got {arr.shape}")
+
+    if arr.dtype != np.uint8:
+        arr = arr.astype(np.float32)
+        maxv = float(arr.max()) if arr.size else 0.0
+        if maxv <= 1.0:
+            arr = arr * 255.0
+        arr = np.clip(arr, 0, 255).astype(np.uint8)
+
+    return arr
+
+
+def ensure_bgr_image(image: np.ndarray | None) -> np.ndarray | None:
+    if image is None:
+        return None
+    arr = np.asarray(image)
+    if arr.ndim == 2:
+        return cv2.cvtColor(arr, cv2.COLOR_GRAY2BGR)
+    if arr.ndim == 3 and arr.shape[-1] == 1:
+        return cv2.cvtColor(arr[..., 0], cv2.COLOR_GRAY2BGR)
+    return arr
+
+
+def log_aux_image(scene: RerunScene, camera_name: str, path: str, image: np.ndarray) -> None:
+    rr.log(path, rr.CoordinateFrame(frame=f"{scene.world_path}/cam/{camera_name}/image_plane"), static=True)
+    rr.log(path, rr.Image(image, color_model="BGR").compress(jpeg_quality=75), static=False)
 
 
 def coerce_w2c_pose(w2c: np.ndarray | None) -> np.ndarray | None:
@@ -134,6 +196,12 @@ def joint_values_from_q(scene: RerunScene, q: np.ndarray) -> dict[str, float]:
     return {name: float(value) for name, value in zip(arm_joint_names, q, strict=True)}
 
 
+def camera_world_position(extrinsic: np.ndarray) -> np.ndarray:
+    rot = np.asarray(extrinsic[:3, :3], dtype=np.float64)
+    t = np.asarray(extrinsic[:3, 3], dtype=np.float64)
+    return (-rot.T @ t).astype(np.float32)
+
+
 def main(cfg: Config) -> None:
     client = Client(cfg.host, cfg.port)
     cap = cv2.VideoCapture(cfg.camera)
@@ -148,6 +216,8 @@ def main(cfg: Config) -> None:
         spawn=cfg.spawn,
         rrd_path=cfg.rrd_path,
     )
+    mask_path = f"{scene.world_path}/cam/{cfg.camera_name}/mask"
+    raster_path = f"{scene.world_path}/cam/{cfg.camera_name}/raster"
     scene.set_cameras([cfg.camera_name])
 
     q = np.asarray(cfg.q, dtype=np.float32)
@@ -156,6 +226,7 @@ def main(cfg: Config) -> None:
 
     start = time.monotonic()
     step = 0
+    camera_history: deque[np.ndarray] = deque(maxlen=max(1, int(cfg.history)))
     logging.info("Polling camera %s and sending frames to %s:%s", cfg.camera, cfg.host, cfg.port)
     while cfg.limit is None or step < cfg.limit:
         ret, frame = cap.read()
@@ -188,6 +259,16 @@ def main(cfg: Config) -> None:
         }
         out = client.step(payload)
 
+        mask = draw_mask(out.get("mask") if out else None)
+        raster_raw = out.get("raster_image") if out else None
+        if raster_raw is None and out is not None:
+            raster_raw = out.get("rast_image")
+        raster = draw_output_image(raster_raw)
+        if mask is not None:
+            log_aux_image(scene, cfg.camera_name, mask_path, ensure_bgr_image(mask))
+        if raster is not None:
+            log_aux_image(scene, cfg.camera_name, raster_path, ensure_bgr_image(raster))
+
         pose = coerce_w2c_pose(out.get("w2c") if out else None)
         if pose is not None:
             calibration = dream_camera_calibration(k_orig, pose, w, h)
@@ -195,7 +276,24 @@ def main(cfg: Config) -> None:
             # scene's FLU world frame the same way the static calibration loader does.
             calibration["extrinsics"] = xctf.RDF2FLU @ pose
             try:
+                camera_position = camera_world_position(np.asarray(calibration["extrinsics"], dtype=np.float64))
+                if not np.isfinite(camera_position).all():
+                    raise ValueError(f"Camera center has non-finite values: {camera_position!r}")
+                camera_distance = float(np.linalg.norm(camera_position))
+                if camera_distance > cfg.max_camera_distance:
+                    raise ValueError(
+                        f"Camera center distance {camera_distance:.3f} m exceeds max_camera_distance={cfg.max_camera_distance:.3f} m"
+                    )
+
                 log_dynamic_camera(scene, cfg.camera_name, calibration)
+                camera_history.append(camera_position)
+                history_points = np.stack(camera_history, axis=0)
+                scene.log_points3d(
+                    history_points,
+                    colors=np.repeat(np.array([[255, 128, 0]], dtype=np.uint8), len(history_points), axis=0),
+                    radii=0.01,
+                    path=f"{scene.world_path}/scene/{cfg.camera_name}_history",
+                )
             except (ValueError, np.linalg.LinAlgError) as exc:
                 logging.warning("Skipping invalid Dream camera pose at step %d: %s", step, exc)
         else:
@@ -203,6 +301,10 @@ def main(cfg: Config) -> None:
 
         if cfg.show:
             cv2.imshow(f"Dream {cfg.camera}", frame)
+            if mask is not None:
+                cv2.imshow(f"Dream {cfg.camera} Mask", mask)
+            if raster is not None:
+                cv2.imshow(f"Dream {cfg.camera} Raster", raster)
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
 
