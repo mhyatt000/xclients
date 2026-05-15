@@ -9,6 +9,7 @@ import time
 import cv2
 import numpy as np
 import rerun as rr
+import rerun.blueprint as rrb
 from scipy.spatial.transform import Rotation as R
 import tyro
 from webpolicy.client import Client
@@ -115,6 +116,31 @@ def log_aux_image(scene: RerunScene, camera_name: str, path: str, image: np.ndar
     rr.log(path, rr.Image(image, color_model="BGR").compress(jpeg_quality=75), static=False)
 
 
+def send_dream_blueprint(scene: RerunScene, camera_name: str) -> None:
+    cam_root = f"{scene.world_path}/cam/{camera_name}"
+    blueprint = rrb.Blueprint(
+        rrb.Horizontal(
+            rrb.Spatial3DView(
+                origin="/",
+                contents=[
+                    "+ /robot/**",
+                    f"+ {scene.world_path}/**",
+                ],
+            ),
+            rrb.Vertical(
+                contents=[
+                    rrb.Spatial2DView(origin=cam_root, contents=["+ $origin/image"]),
+                    rrb.Spatial2DView(origin=cam_root, contents=["+ $origin/mask"]),
+                    rrb.Spatial2DView(origin=cam_root, contents=["+ $origin/raster"]),
+                ]
+            ),
+            column_shares=[4, 1],
+        ),
+        collapse_panels=True,
+    )
+    rr.send_blueprint(blueprint)
+
+
 def coerce_w2c_pose(w2c: np.ndarray | None) -> np.ndarray | None:
     if w2c is None:
         return None
@@ -202,6 +228,21 @@ def camera_world_position(extrinsic: np.ndarray) -> np.ndarray:
     return (-rot.T @ t).astype(np.float32)
 
 
+def history_colors(count: int) -> np.ndarray:
+    if count <= 0:
+        return np.zeros((0, 4), dtype=np.uint8)
+    if count == 1:
+        return np.array([[255, 128, 0, 255]], dtype=np.uint8)
+
+    oldest = np.array([255.0, 255.0, 255.0], dtype=np.float32)
+    newest = np.array([255.0, 128.0, 0.0], dtype=np.float32)
+    t = np.linspace(0.0, 1.0, count, dtype=np.float32)[:, None]
+    rgb = oldest * (1.0 - t) + newest * t
+    alpha = (64.0 + 191.0 * t).reshape(-1, 1)
+    colors = np.concatenate([rgb, alpha], axis=1)
+    return np.round(colors).astype(np.uint8)
+
+
 def main(cfg: Config) -> None:
     client = Client(cfg.host, cfg.port)
     cap = cv2.VideoCapture(cfg.camera)
@@ -219,10 +260,10 @@ def main(cfg: Config) -> None:
     mask_path = f"{scene.world_path}/cam/{cfg.camera_name}/mask"
     raster_path = f"{scene.world_path}/cam/{cfg.camera_name}/raster"
     scene.set_cameras([cfg.camera_name])
+    send_dream_blueprint(scene, cfg.camera_name)
 
-    q = np.asarray(cfg.q, dtype=np.float32)
-    if cfg.deg2rad:
-        q = np.deg2rad(q)
+    q_cfg = np.asarray(cfg.q, dtype=np.float32)
+    q_payload = np.deg2rad(q_cfg) if cfg.deg2rad else q_cfg
 
     start = time.monotonic()
     step = 0
@@ -249,12 +290,12 @@ def main(cfg: Config) -> None:
         rr.set_time("step", sequence=step)
         rr.set_time("time", duration=time.monotonic() - start)
         scene.log_camera_images({cfg.camera_name: frame})
-        scene.log_joints(joint_values_from_q(scene, q), step=step)
+        scene.log_joints(joint_values_from_q(scene, q_cfg), step=step, degrees=True)
 
         payload = {
             "image": frame_model,
             "type": "image",
-            "q": q,
+            "q": q_payload,
             "K": k_model,
         }
         out = client.step(payload)
@@ -272,10 +313,11 @@ def main(cfg: Config) -> None:
         pose = coerce_w2c_pose(out.get("w2c") if out else None)
         if pose is not None:
             calibration = dream_camera_calibration(k_orig, pose, w, h)
-            # Dream returns camera pose relative to the robot/world in RDF; convert to the
-            # scene's FLU world frame the same way the static calibration loader does.
-            calibration["extrinsics"] = xctf.RDF2FLU @ pose
             try:
+                # Dream returns camera pose relative to the robot/world in RDF; convert to the
+                # scene's FLU world frame the same way the static calibration loader does.
+                calibration["extrinsics"] = xctf.RDF2FLU @ pose
+
                 camera_position = camera_world_position(np.asarray(calibration["extrinsics"], dtype=np.float64))
                 if not np.isfinite(camera_position).all():
                     raise ValueError(f"Camera center has non-finite values: {camera_position!r}")
@@ -290,7 +332,7 @@ def main(cfg: Config) -> None:
                 history_points = np.stack(camera_history, axis=0)
                 scene.log_points3d(
                     history_points,
-                    colors=np.repeat(np.array([[255, 128, 0]], dtype=np.uint8), len(history_points), axis=0),
+                    colors=history_colors(len(history_points)),
                     radii=0.01,
                     path=f"{scene.world_path}/scene/{cfg.camera_name}_history",
                 )
