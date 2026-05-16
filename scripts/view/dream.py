@@ -14,7 +14,6 @@ from scipy.spatial.transform import Rotation as R
 import tyro
 from webpolicy.client import Client
 
-from xclients.core import tf as xctf
 from xclients.core.run.scene import RerunScene
 
 logging.basicConfig(level=logging.INFO)
@@ -46,6 +45,7 @@ class Config:
     max_camera_distance: float = 3.0  # Skip Dream poses whose camera center is farther than this many meters
     depth_stride: int = 4  # Subsample factor when converting depth maps to 3D points
     max_depth: float = 2.0  # Maximum depth in meters to include in the point cloud
+    depth_history: int = 10  # Number of recent DA point clouds to keep, fading older clouds by opacity
     show: bool = False  # Also show the local OpenCV window
 
     def __post_init__(self) -> None:
@@ -275,6 +275,38 @@ def history_colors(count: int) -> np.ndarray:
     return np.round(colors).astype(np.uint8)
 
 
+def add_alpha(colors: np.ndarray, alpha: float) -> np.ndarray:
+    rgb = np.asarray(colors, dtype=np.uint8)
+    if rgb.ndim != 2 or rgb.shape[1] not in (3, 4):
+        raise ValueError(f"Expected colors with shape (n, 3) or (n, 4), got {rgb.shape}")
+    if rgb.shape[1] == 4:
+        rgb = rgb[:, :3]
+    alpha_col = np.full((len(rgb), 1), round(np.clip(alpha, 0.0, 255.0)), dtype=np.uint8)
+    return np.concatenate([rgb, alpha_col], axis=1)
+
+
+def depth_history_cloud(history: deque[tuple[np.ndarray, np.ndarray]]) -> tuple[np.ndarray, np.ndarray]:
+    if not history:
+        return np.zeros((0, 3), dtype=np.float32), np.zeros((0, 4), dtype=np.uint8)
+
+    count = len(history)
+    points = []
+    colors = []
+    for i, (cloud_points, cloud_colors) in enumerate(history):
+        alpha = 64.0 if count == 1 else 32.0 + 223.0 * (i / (count - 1))
+        points.append(cloud_points)
+        colors.append(add_alpha(cloud_colors, alpha))
+    return np.concatenate(points, axis=0), np.concatenate(colors, axis=0)
+
+
+def transform_points(transform: np.ndarray, points: np.ndarray) -> np.ndarray:
+    if len(points) == 0:
+        return points.astype(np.float32)
+    rot = np.asarray(transform[:3, :3], dtype=np.float32)
+    t = np.asarray(transform[:3, 3], dtype=np.float32)
+    return (points @ rot.T + t).astype(np.float32)
+
+
 def first_array(value: object) -> np.ndarray | None:
     if value is None:
         return None
@@ -358,6 +390,7 @@ def main(cfg: Config) -> None:
     start = time.monotonic()
     step = 0
     camera_history: deque[np.ndarray] = deque(maxlen=max(1, int(cfg.history)))
+    depth_history: deque[tuple[np.ndarray, np.ndarray]] = deque(maxlen=max(1, int(cfg.depth_history)))
     logging.info("Polling camera %s and sending frames to %s:%s", cfg.camera, cfg.host, cfg.port)
     while cfg.limit is None or step < cfg.limit:
         ret, frame = cap.read()
@@ -412,7 +445,13 @@ def main(cfg: Config) -> None:
         if depth_vis is not None:
             log_aux_image(scene, cfg.camera_name, depth_path, depth_vis)
 
-        if depth_raw is not None:
+        pose = coerce_w2c_pose(out.get("w2c") if out else None)
+        calibration = None
+        if pose is not None:
+            calibration = dream_camera_calibration(k_orig, pose, w, h)
+            calibration["extrinsics"] = pose
+
+        if depth_raw is not None and calibration is not None:
             depth_intr = first_array(da_out.get("intrinsics") if da_out else None)
             if depth_intr is None:
                 depth_intr = k_orig
@@ -424,21 +463,25 @@ def main(cfg: Config) -> None:
                     stride=cfg.depth_stride,
                     max_depth=cfg.max_depth,
                 )
+                camera_to_world = np.linalg.inv(np.asarray(calibration["extrinsics"], dtype=np.float64))
+                points_world = transform_points(camera_to_world, points_cam)
+                depth_history.append((points_world, colors_rgb))
+                history_points, history_colors_rgba = depth_history_cloud(depth_history)
                 scene.log_points3d(
-                    points_cam,
-                    colors=colors_rgb,
-                    radii=0.02,
+                    history_points,
+                    colors=history_colors_rgba,
+                    radii=0.005,
                     path=depth_points_path,
-                    parent_frame=f"{scene.world_path}/cam/{cfg.camera_name}",
+                    parent_frame=str(scene.world_path),
                 )
             except ValueError as exc:
                 logging.warning("Skipping DA depth point cloud at step %d: %s", step, exc)
+        elif depth_raw is not None:
+            logging.warning("Skipping DA depth point cloud at step %d because Dream pose is unavailable", step)
 
-        pose = coerce_w2c_pose(out.get("w2c") if out else None)
         if pose is not None:
-            calibration = dream_camera_calibration(k_orig, pose, w, h)
             try:
-                calibration["extrinsics"] = xctf.RDF2FLU @ pose
+                assert calibration is not None
 
                 camera_position = camera_world_position(np.asarray(calibration["extrinsics"], dtype=np.float64))
                 if not np.isfinite(camera_position).all():
