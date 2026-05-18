@@ -1,3 +1,8 @@
+[build-system]
+requires = ["torch". "setuptools"]
+# requires = ["uv_build>=0.9.15"]
+# build-backend = "uv_build"
+
 [project]
 name = "server-da3"
 version = "0.1.0"
@@ -6,15 +11,15 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "depth-anything-3[all]",
-    "torch",
     "gsplat",
     "tyro>=0.9.35",
     "numpy>=1.26.4",
     "pydantic>=2.12.3",
     "rich>=14.2.0",
     "webpolicy",
-    "xformers==0.0.12",
+    "xformers",
     "trimesh>=4.10.0",
+    "torch>=2.9.1",
 ]
 
 [tool.uv.sources]
