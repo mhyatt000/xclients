@@ -45,7 +45,7 @@ class Config:
     xacro_path: str = "urdf/xarm_device.urdf.xacro"  # Xacro path relative to ros_package
     urdf_path: Path | None = None  # Direct URDF path; defaults to server_roboreg bundled xArm URDF
     root_link_name: str = "link_base"  # Robot root link
-    end_link_name: str = "link7"  # Robot end link
+    end_link_name: str = "link_eef"  # Robot end link
     collision_meshes: bool = False  # Use collision meshes instead of visual meshes
 
     def __post_init__(self) -> None:
