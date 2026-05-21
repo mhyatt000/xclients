@@ -59,7 +59,12 @@ def bool_mask(mask: np.ndarray) -> np.ndarray:
 
 
 def cv_mask(mask: np.ndarray) -> np.ndarray:
-    return (mask * 255).astype(np.uint8)
+    arr = np.asarray(mask)
+    if arr.dtype == np.bool_:
+        return arr.astype(np.uint8) * 255
+    if arr.max(initial=0) <= 1:
+        return (arr * 255).astype(np.uint8)
+    return arr.astype(np.uint8)
 
 
 def collect_sam_masks(cfg: Config, records: list[Record]) -> np.ndarray:
@@ -92,21 +97,9 @@ def collect_sam_masks(cfg: Config, records: list[Record]) -> np.ndarray:
                     "confidence": cfg.sam_confidence,
                 }
             )
-            gripper_out = client.step(
-                {
-                    "type": "image",
-                    "image": record.image,
-                    "text": "end effector",
-                    "confidence": 0.3,
-                }
-            )
-            arm_mask = mask_from_sam(arm_out, record.image.shape[:2])
-            gripper_mask = mask_from_sam(gripper_out, record.image.shape[:2])
-            arm_mask, gripper_mask = bool_mask(arm_mask), bool_mask(gripper_mask)
-            mask = np.logical_and(arm_mask, np.logical_not(gripper_mask)).astype(np.uint8)
-            write_image(mask_dir / f"{record.stem}_mask.png", cv_mask(mask))
-            write_image(mask_dir / f"{record.stem}_grippermask.png", cv_mask(gripper_mask))
-            write_image(mask_dir / f"{record.stem}_arm-mask.png", cv_mask(arm_mask))
+            mask = mask_from_sam(arm_out, record.image.shape[:2])
+
+            write_image(mask_dir / f"{record.stem}_mask.png", mask)
 
     if missing:
         return collect_sam_masks(Config(**(asdict(cfg) | {"refresh_cache": False})), records)
