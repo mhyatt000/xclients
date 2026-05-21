@@ -21,9 +21,14 @@ class Config:
 
     sam_host: str = "127.0.0.1"  # SAM3 server host
     sam_port: int = 8080  # SAM3 server port
-    sam_prompt: str = "robot arm"  # SAM3 text prompt
+    sam_prompt: str = "xArm robot arm with gripper"  # SAM3 text prompt
     sam_confidence: float = 0.5  # SAM3 confidence threshold
+    sam_confidence_candidates: list[float] = field(default_factory=list)  # Optional confidence sweep
     sam_raw_webpolicy: bool = True  # Send raw payloads for older SAM3 webpolicy servers
+    sam_min_area_ratio: float = 0.005  # Reject tiny SAM candidates
+    sam_max_area_ratio: float = 0.8  # Reject masks covering most of the image
+    sam_close_kernel_size: int = 3  # Morphological close kernel; 0 disables
+    sam_min_component_area: int = 16  # Remove tiny mask islands; 0 disables
 
     dream_host: str = "127.0.0.1"  # Crossformer DREAM server host
     dream_port: int = 8002  # Crossformer DREAM server port
