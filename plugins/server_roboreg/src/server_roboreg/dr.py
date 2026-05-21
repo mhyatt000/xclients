@@ -3,12 +3,15 @@ from __future__ import annotations
 import importlib
 import os
 
+import cv2
 import jax
 import numpy as np
 import pytorch_kinematics as pk
 from roboreg.losses import soft_dice_loss
 from roboreg.util import mask_distance_transform, mask_exponential_decay, overlay_mask
+from roboreg.util.factories import create_robot_scene
 import torch
+import tyro
 
 from server_roboreg.common import DRConfig, HydraConfig, REGISTRATION_MODE
 from server_roboreg.logging_utils import (
