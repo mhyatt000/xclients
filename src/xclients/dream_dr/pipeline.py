@@ -28,6 +28,9 @@ def main(cfg: Config) -> None:
     ht = assert_dream_pose(initial, len(records))
 
     dr_out = run_dr(cfg, records, masks, ht) if cfg.run_dr else None
-    print(dr_out)
+    if dr_out is None:
+        logging.info("DR output: None")
+    else:
+        logging.info("DR output generated %s", type(dr_out).__name__)
     save_outputs(cfg, records, masks, initial, dr_out)
     logging.info("Wrote outputs to %s", cfg.output_dir)

@@ -13,7 +13,9 @@ from xclients.dream_dr.config import Config, Record
 
 def write_image(path: Path, image: np.ndarray) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    cv2.imwrite(str(path), image)
+    ok = cv2.imwrite(str(path), image)
+    if not ok:
+        raise OSError(f"Failed to write image to {path}")
 
 
 def save_outputs(cfg: Config, records: list[Record], masks: np.ndarray, initial: dict, dr_out: dict | None) -> None:
