@@ -1142,6 +1142,7 @@ source = { editable = "." }
 dependencies = [
     { name = "chumpy" },
     { name = "dill" },
+    { name = "tyro" },
     { name = "webpolicy" },
     { name = "wilor-mini" },
 ]
@@ -1150,6 +1151,7 @@ dependencies = [
 requires-dist = [
     { name = "chumpy", git = "https://github.com/mhyatt000/chumpy" },
     { name = "dill", specifier = ">=0.4.1" },
+    { name = "tyro", specifier = ">=1.0.11" },
     { name = "webpolicy", git = "https://github.com/mhyatt000/webpolicy" },
     { name = "wilor-mini", git = "https://github.com/warmshao/wilor-mini" },
 ]

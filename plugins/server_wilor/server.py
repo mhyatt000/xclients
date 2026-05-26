@@ -3,6 +3,8 @@ import torch
 from webpolicy.base_policy import BasePolicy
 from webpolicy.server import Server
 from wilor_mini.pipelines.wilor_hand_pose3d_estimation_pipeline import WiLorHandPose3dEstimationPipeline
+from dataclasses import dataclass
+import tyro
 
 
 class WilorPolicy(BasePolicy):
@@ -49,8 +51,16 @@ class WilorPolicy(BasePolicy):
     def reset(self, payload: dict | None = None) -> None:
         pass
 
+@dataclass
+class Config:
+    host:str = '0.0.0.0'
+    port:int = 8084
+
+def main(cfg: Config):
+    policy = WilorPolicy()
+    server = Server(policy=policy, host=cfg.host, port=cfg.port)
+    server.start()
+
 
 if __name__ == "__main__":
-    policy = WilorPolicy()
-    server = Server(policy=policy, host="0.0.0.0", port=8000)
-    server.start()
+    tyro.cli(main)
