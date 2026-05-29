@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 import logging
 
 import cv2
@@ -261,8 +261,14 @@ def _select_mask(cfg: Config, record: Record, candidates: list[SamCandidate], pr
 
 
 def collect_sam_masks(cfg: Config, records: list[Record]) -> np.ndarray:
+    masks, _ = collect_sam_masks_with_records(cfg, records)
+    return masks
+
+
+def collect_sam_masks_with_records(cfg: Config, records: list[Record]) -> tuple[np.ndarray, list[Record]]:
     mask_dir = cfg.output_dir / "masks"
     masks = []
+    kept_records = []
     missing = []
     for record in records:
         path = mask_dir / f"{record.stem}_mask.png"
@@ -271,6 +277,7 @@ def collect_sam_masks(cfg: Config, records: list[Record]) -> np.ndarray:
             if mask is None:
                 raise RuntimeError(f"Failed to read cached mask {path}")
             masks.append(mask)
+            kept_records.append(record)
         else:
             missing.append(record)
 
@@ -284,10 +291,15 @@ def collect_sam_masks(cfg: Config, records: list[Record]) -> np.ndarray:
         for record in missing:
             logging.info("Requesting SAM mask for %s", record.stem)
             candidates = _request_candidates(client, cfg, record)
+            if not candidates:
+                logging.warning("SAM returned no mask candidates for %s; excluding this frame from DR", record.stem)
+                continue
             mask = _select_mask(cfg, record, candidates, priors.get(record.stem))
 
             write_image(mask_dir / f"{record.stem}_mask.png", mask)
+            masks.append(mask)
+            kept_records.append(record)
 
-    if missing:
-        return collect_sam_masks(Config(**(asdict(cfg) | {"refresh_cache": False})), records)
-    return np.stack(masks).astype(np.uint8)
+    if not masks:
+        raise ValueError("SAM produced no usable masks for any selected records")
+    return np.stack(masks).astype(np.uint8), kept_records

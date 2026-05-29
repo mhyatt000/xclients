@@ -18,11 +18,16 @@ class Config:
     extrinsics_path: Path | None = None  # Optional file/dir with w2c, HT, or extrinsics
     record_w2c_index: int | None = None  # Optional record index for static w2c; defaults to scored best
     intrinsics_path: Path | None = None  # Optional file/dir with K or intrinsics
+    arrayrecord_dir: Path | None = None  # Optional ArrayRecord directory to send to DREAM instead of local npz files
+    arrayrecord_cameras: tuple[str, ...] = ()  # Optional camera names to request from DREAM; empty means server default/all
+    arrayrecord_focal_px: float = 515.0  # Focal length used when ArrayRecord samples do not include intrinsics
+    arrayrecord_batch_size: int = 32  # DREAM batch size for streaming ArrayRecord processing
+    arrayrecord_dr_max_records: int = 64  # Max frames from each shard/camera passed to one roboreg optimization; 0 uses all
 
     sam_host: str = "127.0.0.1"  # SAM3 server host
     sam_port: int = 8080  # SAM3 server port
     sam_prompt: str = "xArm robot arm with gripper"  # SAM3 text prompt
-    sam_confidence: float = 0.5  # SAM3 confidence threshold
+    sam_confidence: float = 0.3  # SAM3 confidence threshold
     sam_confidence_candidates: list[float] = field(default_factory=list)  # Optional confidence sweep
     sam_raw_webpolicy: bool = True  # Send raw payloads for older SAM3 webpolicy servers
     sam_min_area_ratio: float = 0.005  # Reject tiny SAM candidates
@@ -59,6 +64,8 @@ class Config:
             self.extrinsics_path = self.extrinsics_path.expanduser().resolve()
         if self.intrinsics_path is not None:
             self.intrinsics_path = self.intrinsics_path.expanduser().resolve()
+        if self.arrayrecord_dir is not None:
+            self.arrayrecord_dir = self.arrayrecord_dir.expanduser().resolve()
         if self.urdf_path is not None:
             self.urdf_path = self.urdf_path.expanduser().resolve()
         if self.output_dir is None:
