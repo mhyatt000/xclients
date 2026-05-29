@@ -15,12 +15,12 @@ from tqdm import tqdm
 import tyro
 from webpolicy.client import Client
 
-import xclients
-from xclients.core import tf as xctf
 from xclients.core.cfg import Config, spec
-from xclients.triangulate import batch_triangulate
+from xclients.triangulate import lift_hand_pnp
 
 log = logging.getLogger(__name__)
+
+NJOINTS = 21  # MANO / WiLoR hand
 
 
 def waitq(ms: int) -> bool:
@@ -146,71 +146,47 @@ class PrepConfig(Config):
     show_first_only: bool = False
 
 
-def load_extr(name: str):
-    p = xclients.ROOT / "data/cam" / name / "HT.npz"
-    x = np.load(p)
-    x = {k: x[k] for k in x}["HT"]
-    x = xctf.RDF2FLU @ np.linalg.inv(x)
-    return x
-
-
 def main(cfg: PrepConfig):
-    # display(cfg)
-
+    # Per-camera single-view PnP. Cameras move between episodes, so instead of
+    # triangulating across views we lift each camera independently with
+    # lift_hand_pnp. Output keeps all cameras grouped per frame (no fusing): one
+    # hand per camera in that camera's own frame, plus a per-camera visibility
+    # flag so no-hand frames are masked rather than dropped.
     client = Client(host=cfg.host, port=cfg.port)
-    f = list(cfg.dir.glob("ep*.npz"))
+    eps = list(cfg.dir.glob("ep*.npz"))
 
     h, w = 480, 640
     cx, cy = w / 2, h / 2
     fx, fy = 515.0, 515.0
-    intr = np.array([[fx, 0.0, cx], [0.0, fy, cy], [0.0, 0.0, 1.0]])
-    np.eye(4)[:3, :]  # dummy
+    K = np.array([[fx, 0.0, cx], [0.0, fy, cy], [0.0, 0.0, 1.0]])  # assumed; PnP needs no extrinsics
 
-    ep = Episode.from_npz(f[0])
-    cameras = {
-        k: {
-            "intrinsics": intr,
-            "extrinsics": load_extr(k),
-            "height": h,
-            "width": w,
-        }
-        for k in ep.data
-    }
+    for ep_path in tqdm(eps):
+        ep = Episode.from_npz(ep_path)
+        steps = []
 
-    P = {k: cameras[k]["intrinsics"] @ cameras[k]["extrinsics"][:3, :] for k in ep.data}
+        for s in tqdm(ep, leave=False):  # s = {cam_name: frame[H, W, 3]} at this timestep
+            kp3d_cam, kp2d_all, visible = {}, {}, {}
 
-    for p in tqdm(f):
-        ep = Episode.from_npz(p)
-        _ep = []
+            for cam, img in s.items():
+                out = client.step({"image": img})  # recordings are RGB; wilor expects RGB
+                hand = (out.get("hands") or [None])[0]
 
-        for s in tqdm(ep, leave=False):
-            # print(spec(s))
-            topayload = lambda x: {"image": x}
-            outs = {k: client.step(topayload(v)) for k, v in s.items()}
-            # s = s | out
+                if hand and "keypoints_2d" in hand:
+                    kp2d = np.asarray(hand["keypoints_2d"], dtype=np.float64)  # [21, 2]
+                    kp3d_rel = np.asarray(hand["keypoints_3d"], dtype=np.float64)  # [21, 3] wrist-rel
+                    placed, _R, _t = lift_hand_pnp(kp2d, kp3d_rel, K)  # [21, 3] in cam frame
+                    kp3d_cam[cam], kp2d_all[cam], visible[cam] = placed, kp2d, True
+                else:
+                    # no hand this cam/frame: keep the frame, mask it, fill placeholders
+                    kp3d_cam[cam] = np.zeros((NJOINTS, 3))
+                    kp2d_all[cam] = np.zeros((NJOINTS, 2))
+                    visible[cam] = False
 
-            # print(spec(outs))
-            k2ds = {k: v.get("wilor_preds", {}).get("pred_keypoints_2d") for k, v in outs.items()}
+            steps.append(dict(s) | {"kp3d_cam": kp3d_cam, "kp2d": kp2d_all, "visible": visible})
 
-            if sum([p is not None for p in k2ds.values()]) >= 2:
-                p = np.stack([P[k] for k in cameras if k2ds[k] is not None], axis=0)
-                k2ds = np.array([k2ds[k] for k in cameras if k2ds[k] is not None]).reshape(len(p), -1, 2)
-                # pin 100% confidence
-                k2ds = np.concatenate([k2ds, np.ones((*k2ds.shape[:-1], 1))], axis=-1)
-                # print(p.shape, k2ds.shape)
-
-                k3ds = batch_triangulate(k2ds, p, min_views=2)
-            else:
-                # warning
-                log.warning("Not enough views with 2D keypoints detected, skipping triangulation.")
-                continue
-
-            s = s | {"k3ds": k3ds}
-            # print(spec(s))
-            _ep.append(s)
-        _ep = jax.tree.map(lambda *x: np.stack(x, axis=0), *_ep)
-        print(spec(_ep))
-        yield _ep
+        episode = jax.tree.map(lambda *x: np.stack(x, axis=0), *steps)
+        print(spec(episode))
+        yield episode
 
 
 if __name__ == "__main__":
