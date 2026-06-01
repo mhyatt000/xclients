@@ -22,6 +22,8 @@ Run order:
 """
 
 from __future__ import annotations
+from dataclasses import dataclass
+import tyro
 
 import argparse
 from pathlib import Path
@@ -30,6 +32,7 @@ import cv2
 import numpy as np
 import rerun as rr
 from webpolicy.client import Client
+from xclients.core.cfg import Config
 
 from xclients.triangulate import lift_hand_pnp, project_points
 
@@ -92,18 +95,19 @@ def play(path: Path, client: Client, K: np.ndarray, stride: int) -> None:
             rr.log(f"cam/{cam}/hand3d/bones", rr.LineStrips3D(kp3d_cam[np.array(MANO_PAIRS)]))
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--ep", required=True, help="an ep*.npz file OR a directory of them")
-    ap.add_argument("--host", default="0.0.0.0")
-    ap.add_argument("--port", type=int, default=8084)
-    ap.add_argument("--stride", type=int, default=5, help="use every Nth frame")
-    ap.add_argument("--rrd", default=None, help="save rerun log here instead of opening a viewer")
-    args = ap.parse_args()
+@dataclass
+class MyConfig(Config):
+    ep:bool = True # an ep*.npz file OR a directory of them
+    stride:int = 5 # use every Nth frame
+    rrd:str|None = None # save rerun log here instead of opening a viewer
 
-    if args.rrd:
+def main(cfg:MyConfig) -> None:
+    print('main.')
+    print(cfg)
+
+    if cfg.rrd:
         rr.init("triangulate")
-        rr.save(args.rrd)
+        rr.save(cfg.rrd)
     else:
         rr.init("triangulate", spawn=True)
     # camera-frame convention: x-right, y-down, z-forward (OpenCV / what PnP uses)
@@ -112,10 +116,10 @@ def main() -> None:
     H, W = 480, 640
     K = np.array([[515.0, 0.0, W / 2], [0.0, 515.0, H / 2], [0.0, 0.0, 1.0]])
 
-    client = Client(host=args.host, port=args.port)  # waits until the server is up
-    for path in episode_files(args.ep):
-        play(path, client, K, args.stride)
+    client = Client(host=cfg.host, port=cfg.port)  # waits until the server is up
+    for path in episode_files(cfg.ep):
+        play(path, client, K, cfg.stride)
 
 
 if __name__ == "__main__":
-    main()
+    main(tyro.cli(MyConfig))
