@@ -167,20 +167,22 @@ def main(cfg: PrepConfig):
         for s in tqdm(ep, leave=False):  # s = {cam_name: frame[H, W, 3]} at this timestep
             kp3d_cam, kp2d_all, visible = {}, {}, {}
 
-            for cam, img in s.items():
+            for k, img in s.items(): # key is the frame's camera name, value is the image for that camera at this timestep
                 out = client.step({"image": img})  # recordings are RGB; wilor expects RGB
                 hand = (out.get("hands") or [None])[0]
 
+                # if hand is returned and visible:
                 if hand and "keypoints_2d" in hand:
                     kp2d = np.asarray(hand["keypoints_2d"], dtype=np.float64)  # [21, 2]
                     kp3d_rel = np.asarray(hand["keypoints_3d"], dtype=np.float64)  # [21, 3] wrist-rel
                     placed, _R, _t = lift_hand_pnp(kp2d, kp3d_rel, K)  # [21, 3] in cam frame
-                    kp3d_cam[cam], kp2d_all[cam], visible[cam] = placed, kp2d, True
+                    kp3d_cam[k], kp2d_all[k], visible[k] = placed, kp2d, True
+
+                # no hand this cam/frame: keep the frame, mask it, fill placeholders
                 else:
-                    # no hand this cam/frame: keep the frame, mask it, fill placeholders
-                    kp3d_cam[cam] = np.zeros((NJOINTS, 3))
-                    kp2d_all[cam] = np.zeros((NJOINTS, 2))
-                    visible[cam] = False
+                    kp3d_cam[k] = np.zeros((NJOINTS, 3))
+                    kp2d_all[k] = np.zeros((NJOINTS, 2))
+                    visible[k] = False
 
             steps.append(dict(s) | {"kp3d_cam": kp3d_cam, "kp2d": kp2d_all, "visible": visible})
 
