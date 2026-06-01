@@ -3,6 +3,8 @@ from __future__ import annotations
 import cv2
 from einops import rearrange
 from jaxtyping import Float, Int
+import jaxtyping as jt # noqa
+# TODO rename Float to jt.Float to avoid confusion
 import numpy as np
 from numpy import ndarray
 
@@ -89,6 +91,7 @@ def lift_hand_pnp(
         R: rotation, hand -> camera ``[3, 3]``.
         t: translation, hand -> camera ``[3]``.
     """
+    # force contiguous because OpenCV is picky about that - we dont want error
     obj = np.ascontiguousarray(kp3d_rel, dtype=np.float64)
     img = np.ascontiguousarray(kp2d, dtype=np.float64)
     K = np.asarray(K, dtype=np.float64)
@@ -99,7 +102,7 @@ def lift_hand_pnp(
 
     R, _ = cv2.Rodrigues(rvec)
     t = tvec.reshape(3)
-    kp3d_cam = (R @ obj.T).T + t
+    kp3d_cam = (R @ obj.T).T + t # transform kp3d_rel to kp3d_cam
     return kp3d_cam, R, t
 
 
