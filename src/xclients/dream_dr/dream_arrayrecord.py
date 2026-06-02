@@ -348,9 +348,23 @@ def sample_joints_deg(sample: dict) -> np.ndarray:
     return np.concatenate([np.rad2deg(joints), gripper], axis=0).astype(np.float32)
 
 
-def sample_joints_rad(sample: dict) -> np.ndarray:
+def sample_joints_rad(sample: dict, include_gripper: bool = False) -> np.ndarray:
     proprio = sample.get("proprio", sample)
-    return np.asarray(proprio["joints"], dtype=np.float32).reshape(-1)[:7]
+    joints = np.asarray(proprio["joints"], dtype=np.float32).reshape(-1)[:7]
+    if not include_gripper:
+        return joints
+
+    drive = sample_gripper_drive_joint(sample)
+    gripper = np.full(6, drive, dtype=np.float32)
+    return np.concatenate([joints, gripper], axis=0).astype(np.float32)
+
+
+def sample_gripper_drive_joint(sample: dict) -> np.float32:
+    proprio = sample.get("proprio", sample)
+    raw = float(np.asarray(proprio.get("gripper", [1.0]), dtype=np.float32).reshape(-1)[0])
+    if 0.0 <= raw <= 1.0:
+        return np.float32(np.clip(1.0 - raw, 0.0, 1.0) * 0.85)
+    return np.float32(np.clip(raw, 0.0, 0.85))
 
 
 def default_intrinsics(h: int, w: int, focal_px: float) -> np.ndarray:

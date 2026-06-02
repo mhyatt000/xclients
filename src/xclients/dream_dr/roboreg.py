@@ -46,6 +46,8 @@ def run_dr(cfg: Config, records: list[Record], masks: np.ndarray, ht: np.ndarray
         max_iterations=cfg.dr_max_iterations,
         step_size=cfg.dr_step_size,
         gamma=cfg.dr_gamma,
+        early_stop_patience=cfg.dr_early_stop_patience,
+        early_stop_min_delta=cfg.dr_early_stop_min_delta,
         mode=REGISTRATION_MODE(cfg.dr_mode),
     )
 

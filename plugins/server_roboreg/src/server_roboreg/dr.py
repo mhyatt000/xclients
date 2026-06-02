@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import logging
 import os
 
 import cv2
@@ -241,6 +242,9 @@ class DR:
         best_root_transform = root_transform
         best_intr = intr.detach().clone()
         best_loss = float("inf")
+        steps_without_improvement = 0
+        early_stop_patience = max(0, int(self.cfg.early_stop_patience))
+        early_stop_min_delta = max(0.0, float(self.cfg.early_stop_min_delta))
 
         for iteration in optimization_progress(range(1, self.cfg.max_iterations + 1)):
             if not root_transform_9d.requires_grad:
@@ -282,8 +286,9 @@ class DR:
                 lr,
             )
 
-            if loss.item() < best_loss:
-                best_loss = loss.item()
+            loss_value = loss.item()
+            if best_loss - loss_value > early_stop_min_delta:
+                best_loss = loss_value
                 best_root_transform = root_transform.detach().clone()
                 best_intr = intr.detach().clone()
                 best_extrinsics = (
@@ -291,6 +296,19 @@ class DR:
                     if optimize_cv_w2c or optimize_root_transform
                     else torch.linalg.inv(best_root_transform)
                 )
+                steps_without_improvement = 0
+            else:
+                steps_without_improvement += 1
+
+            if early_stop_patience and steps_without_improvement >= early_stop_patience:
+                logging.info(
+                    "Stopping DR early at iteration %d/%d: no loss improvement > %.3g for %d steps",
+                    iteration,
+                    self.cfg.max_iterations,
+                    early_stop_min_delta,
+                    early_stop_patience,
+                )
+                break
 
         # render final results and save extrinsics
         with torch.no_grad():

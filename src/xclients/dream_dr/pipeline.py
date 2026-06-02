@@ -98,7 +98,11 @@ def main_arrayrecord(cfg: Config) -> None:
             camera_id = safe_camera_id(camera)
             shard_id = safe_camera_id(shard.shard_id)
             out_key = f"{shard_id}__{camera_id}"
-            cam_cfg = replace(cfg, output_dir=cfg.output_dir / "shards" / shard_id / camera_id)
+            cam_cfg = replace(
+                cfg,
+                output_dir=cfg.output_dir / "shards" / shard_id / camera_id,
+                end_link_name="__all__" if cfg.arrayrecord_render_full_robot else cfg.end_link_name,
+            )
             cam_cfg.output_dir.mkdir(parents=True, exist_ok=True)
             for record in dr_records:
                 write_image(cam_cfg.output_dir / "images" / f"{record.stem}_image.png", record.image)
@@ -162,7 +166,9 @@ def collect_shard_camera_dream(
 
         images = np.stack([sample_image(sample, camera) for _, sample in available]).astype(np.uint8)
         dream_joints = np.stack([sample_joints_deg(sample) for _, sample in available]).astype(np.float32)
-        dr_joints = np.stack([sample_joints_rad(sample) for _, sample in available]).astype(np.float32)
+        dr_joints = np.stack(
+            [sample_joints_rad(sample, include_gripper=cfg.arrayrecord_render_full_robot) for _, sample in available]
+        ).astype(np.float32)
         if start == 0:
             logging.info("Using degree joints for DREAM and radian joints for roboreg rendering")
         h, w = images.shape[1:3]

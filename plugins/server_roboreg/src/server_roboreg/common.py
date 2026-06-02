@@ -27,6 +27,8 @@ class DRConfig:
     max_iterations: int = int(1e3)
     step_size: int = 100
     gamma: float = 1.0
+    early_stop_patience: int = 0
+    early_stop_min_delta: float = 1e-5
 
     mode: REGISTRATION_MODE = REGISTRATION_MODE.DISTANCE_FUNCTION
     display_progress: bool = False

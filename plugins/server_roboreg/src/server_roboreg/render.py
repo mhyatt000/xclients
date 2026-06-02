@@ -5,14 +5,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 import os
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
-from roboreg.differentiable import NVDiffRastRenderer, Robot, RobotScene, VirtualCamera
+import pytorch_kinematics as pk
+from roboreg.differentiable import NVDiffRastRenderer, Robot, RobotScene, TorchMeshContainer, VirtualCamera
 from roboreg.io import URDFParser
 from roboreg.util import overlay_mask
 from roboreg.util.factories import create_robot_scene
 import torch
 from tqdm import tqdm
+import transformations
 
 from server_roboreg.common import HydraConfig
 from server_roboreg.logging_utils import (
@@ -183,6 +186,111 @@ class LocalURDFParser(URDFParser):
             paths[link_name] = str(path if path.is_absolute() else self.urdf_dir / path)
         return paths
 
+    def all_ros_package_mesh_paths(self, collision: bool = False) -> dict[str, str]:
+        paths = {}
+        for link in self._robot.links:
+            mesh = self._link_mesh_path(link, collision)
+            if mesh is None:
+                continue
+            if mesh.startswith("package://"):
+                raise ValueError(f"Standalone URDF cannot resolve ROS package mesh path {mesh!r}")
+            path = Path(mesh)
+            paths[link.name] = str(path if path.is_absolute() else self.urdf_dir / path)
+        return paths
+
+    def all_mesh_origins(self, collision: bool = False) -> dict[str, np.ndarray]:
+        origins = {}
+        for link in self._robot.links:
+            origin = self._link_mesh_origin(link, collision)
+            if origin is None:
+                continue
+            ht = transformations.euler_matrix(origin.rpy[0], origin.rpy[1], origin.rpy[2], "sxyz")
+            ht[:3, 3] = origin.xyz
+            origins[link.name] = ht
+        return origins
+
+    @staticmethod
+    def _link_mesh_path(link, collision: bool) -> str | None:
+        visual = link.collision if collision else link.visual
+        if visual is None or visual.geometry is None:
+            return None
+        return getattr(visual.geometry, "filename", None)
+
+    @staticmethod
+    def _link_mesh_origin(link, collision: bool):
+        visual = link.collision if collision else link.visual
+        if visual is None or visual.geometry is None:
+            return None
+        if visual.origin is None:
+            return SimpleNamespace(xyz=[0.0, 0.0, 0.0], rpy=[0.0, 0.0, 0.0])
+        return visual.origin
+
+
+class FullTreeRobot(TorchMeshContainer):
+    __slots__ = ["_chain", "_configured_vertices", "_mesh_origins_lookup"]
+
+    def __init__(
+        self,
+        urdf_parser: LocalURDFParser,
+        collision: bool = False,
+        batch_size: int = 1,
+        device: torch.device = "cuda",
+    ) -> None:
+        super().__init__(
+            mesh_paths=urdf_parser.all_ros_package_mesh_paths(collision=collision),
+            batch_size=batch_size,
+            device=device,
+        )
+        self._chain = pk.build_chain_from_urdf(urdf_parser.urdf).to(device=device)
+        self._mesh_origins_lookup = {
+            key: torch.from_numpy(value).to(device=device, dtype=torch.float32)
+            for key, value in urdf_parser.all_mesh_origins(collision=collision).items()
+        }
+        self._configured_vertices = self.vertices.clone()
+
+    def configure(self, q: torch.FloatTensor, ht_root: torch.FloatTensor = None) -> None:
+        q = self._normalize_q(q)
+        if q.shape[0] != self._batch_size:
+            raise ValueError(f"Batch size mismatch. Meshes: {self._batch_size}, joint states: {q.shape[0]}.")
+        if ht_root is None:
+            ht_root = torch.eye(4, dtype=q.dtype, device=q.device).unsqueeze(0)
+
+        fk = self._chain.forward_kinematics(q)
+        self._configured_vertices = self.vertices.clone()
+        for link_name in self.mesh_names:
+            if link_name not in fk or link_name not in self._mesh_origins_lookup:
+                continue
+            ht = fk[link_name].get_matrix() @ self._mesh_origins_lookup[link_name]
+            self._configured_vertices[
+                :,
+                self.lower_vertex_index_lookup[link_name] : self.upper_vertex_index_lookup[link_name],
+            ] = torch.matmul(
+                torch.matmul(
+                    self._configured_vertices[
+                        :,
+                        self.lower_vertex_index_lookup[link_name] : self.upper_vertex_index_lookup[link_name],
+                    ],
+                    ht.transpose(-1, -2),
+                ),
+                ht_root.transpose(-1, -2),
+            )
+
+    def _normalize_q(self, q: torch.FloatTensor) -> torch.FloatTensor:
+        expected = len(self._chain.get_joint_parameter_names())
+        if q.shape[-1] == expected:
+            return q
+        if expected == 13 and q.shape[-1] in (7, 8):
+            full = torch.zeros((q.shape[0], expected), dtype=q.dtype, device=q.device)
+            full[:, :7] = q[:, :7]
+            if q.shape[-1] == 8:
+                full[:, 7:] = q[:, 7:8]
+            return full
+        raise ValueError(f"Expected joint states of shape {expected}, got {q.shape[-1]}.")
+
+    @property
+    def configured_vertices(self) -> torch.FloatTensor:
+        return self._configured_vertices
+
 
 def create_robot_scene_from_urdf(
     batch_size: int,
@@ -202,12 +310,20 @@ def create_robot_scene_from_urdf(
     if end_link_name == "":
         end_link_name = parser.link_names_with_meshes(collision=collision)[-1]
 
-    robot = Robot(
-        urdf_parser=parser,
-        root_link_name=root_link_name,
-        end_link_name=end_link_name,
-        collision=collision,
-        batch_size=batch_size,
-        device=device,
-    )
+    if end_link_name in {"__all__", "all", "*"}:
+        robot = FullTreeRobot(
+            urdf_parser=parser,
+            collision=collision,
+            batch_size=batch_size,
+            device=device,
+        )
+    else:
+        robot = Robot(
+            urdf_parser=parser,
+            root_link_name=root_link_name,
+            end_link_name=end_link_name,
+            collision=collision,
+            batch_size=batch_size,
+            device=device,
+        )
     return RobotScene(cameras=cameras, robot=robot, renderer=NVDiffRastRenderer(device=device))

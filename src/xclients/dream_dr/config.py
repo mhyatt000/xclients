@@ -23,6 +23,7 @@ class Config:
     arrayrecord_focal_px: float = 515.0  # Focal length used when ArrayRecord samples do not include intrinsics
     arrayrecord_batch_size: int = 32  # DREAM batch size for streaming ArrayRecord processing
     arrayrecord_dr_max_records: int = 64  # Max frames from each shard/camera passed to one roboreg optimization; 0 uses all
+    arrayrecord_render_full_robot: bool = True  # Render full URDF tree for ArrayRecord DR so gripper meshes are included
 
     sam_host: str = "127.0.0.1"  # SAM3 server host
     sam_port: int = 8080  # SAM3 server port
@@ -49,6 +50,8 @@ class Config:
     dr_max_iterations: int = 1000  # DR optimization iterations
     dr_step_size: int = 100  # LR scheduler step size
     dr_gamma: float = 0.8  # LR scheduler gamma
+    dr_early_stop_patience: int = 200  # Stop DR after this many steps without meaningful loss improvement; 0 disables
+    dr_early_stop_min_delta: float = 1e-5  # Minimum loss improvement that resets early-stop patience
     dr_mode: Literal["distance-function", "segmentation"] = "segmentation"  # DR loss target
 
     ros_package: str = "xarm_description"  # Robot description package for roboreg
