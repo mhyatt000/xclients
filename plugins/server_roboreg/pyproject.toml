@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 # nvdiffrast requires torch to build
 [tool.uv.extra-build-dependencies]
-nvdiffrast = ["torch"]
+nvdiffrast = ["numpy", "torch==2.9.1"]
 
 [project]
 name = "server-roboreg"
@@ -17,6 +17,7 @@ dependencies = [
     "jax>=0.8.1",
     "rich>=14.2.0",
     "roboreg",
+    "torch==2.9.1",
     "tyro>=0.9.35",
     "webpolicy",
     "nvdiffrast",
