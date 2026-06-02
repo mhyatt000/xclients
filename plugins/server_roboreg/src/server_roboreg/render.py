@@ -9,10 +9,16 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytorch_kinematics as pk
-from roboreg.differentiable import NVDiffRastRenderer, Robot, RobotScene, TorchMeshContainer, VirtualCamera
-from roboreg.io import URDFParser
+from roboreg.core import NVDiffRastRenderer, Robot, RobotScene, TorchKinematics, TorchMeshContainer, VirtualCamera
+from roboreg.io import (
+    apply_mesh_origins,
+    load_meshes,
+    load_robot_data_from_ros_xacro,
+    load_robot_data_from_urdf_file,
+    simplify_meshes,
+    URDFParser,
+)
 from roboreg.util import overlay_mask
-from roboreg.util.factories import create_robot_scene
 import torch
 from tqdm import tqdm
 import transformations
@@ -75,7 +81,7 @@ class Renderer:
 
         if cfg.urdf:
             log_renderer_urdf(cfg.urdf)
-            self.scene = create_robot_scene_from_urdf(
+            self.scene = create_robot_scene_from_urdf_file(
                 batch_size=rcfg.batch_size,
                 urdf_path=cfg.urdf,
                 root_link_name=cfg.root_link_name,
@@ -86,7 +92,7 @@ class Renderer:
             )
         else:
             log_renderer_ros_scene(cfg.ros_package, cfg.xacro_path)
-            self.scene = create_robot_scene(
+            self.scene = create_robot_scene_from_ros_xacro(
                 batch_size=rcfg.batch_size,
                 ros_package=cfg.ros_package,
                 xacro_path=cfg.xacro_path,
@@ -170,37 +176,33 @@ class Renderer:
         return {"overlays": overlays}
 
 
-class LocalURDFParser(URDFParser):
-    def __init__(self, urdf_dir: Path) -> None:
-        super().__init__()
+class LocalURDFParser:
+    def __init__(self, parser: URDFParser, urdf_dir: Path) -> None:
+        self.parser = parser
         self.urdf_dir = urdf_dir
 
-    def ros_package_mesh_paths(
-        self, root_link_name: str, end_link_name: str, collision: bool = False
-    ) -> dict[str, str]:
-        paths = {}
-        for link_name, raw_path in self.raw_mesh_paths(root_link_name, end_link_name, collision=collision).items():
-            if raw_path.startswith("package://"):
-                raise ValueError(f"Standalone URDF cannot resolve ROS package mesh path {raw_path!r}")
-            path = Path(raw_path)
-            paths[link_name] = str(path if path.is_absolute() else self.urdf_dir / path)
-        return paths
+    @classmethod
+    def from_file(cls, urdf_path: Path) -> LocalURDFParser:
+        return cls(URDFParser.from_urdf_file(urdf_path), urdf_path.parent)
 
-    def all_ros_package_mesh_paths(self, collision: bool = False) -> dict[str, str]:
+    def __getattr__(self, name: str):
+        return getattr(self.parser, name)
+
+    def all_mesh_paths(self, collision: bool = False) -> dict[str, Path]:
         paths = {}
-        for link in self._robot.links:
+        for link in self.parser._robot.links:
             mesh = self._link_mesh_path(link, collision)
             if mesh is None:
                 continue
             if mesh.startswith("package://"):
                 raise ValueError(f"Standalone URDF cannot resolve ROS package mesh path {mesh!r}")
             path = Path(mesh)
-            paths[link.name] = str(path if path.is_absolute() else self.urdf_dir / path)
+            paths[link.name] = path if path.is_absolute() else self.urdf_dir / path
         return paths
 
     def all_mesh_origins(self, collision: bool = False) -> dict[str, np.ndarray]:
         origins = {}
-        for link in self._robot.links:
+        for link in self.parser._robot.links:
             origin = self._link_mesh_origin(link, collision)
             if origin is None:
                 continue
@@ -226,8 +228,8 @@ class LocalURDFParser(URDFParser):
         return visual.origin
 
 
-class FullTreeRobot(TorchMeshContainer):
-    __slots__ = ["_chain", "_configured_vertices", "_mesh_origins_lookup"]
+class FullTreeRobot:
+    __slots__ = ["_chain", "_configured_vertices", "_device", "_mesh_container"]
 
     def __init__(
         self,
@@ -236,39 +238,35 @@ class FullTreeRobot(TorchMeshContainer):
         batch_size: int = 1,
         device: torch.device = "cuda",
     ) -> None:
-        super().__init__(
-            mesh_paths=urdf_parser.all_ros_package_mesh_paths(collision=collision),
-            batch_size=batch_size,
-            device=device,
-        )
+        meshes = load_meshes(paths=urdf_parser.all_mesh_paths(collision=collision))
+        meshes = simplify_meshes(meshes=meshes, target_reduction=0.0)
+        meshes = apply_mesh_origins(meshes=meshes, origins=urdf_parser.all_mesh_origins(collision=collision))
+        self._mesh_container = TorchMeshContainer(meshes=meshes, batch_size=batch_size, device=device)
         self._chain = pk.build_chain_from_urdf(urdf_parser.urdf).to(device=device)
-        self._mesh_origins_lookup = {
-            key: torch.from_numpy(value).to(device=device, dtype=torch.float32)
-            for key, value in urdf_parser.all_mesh_origins(collision=collision).items()
-        }
-        self._configured_vertices = self.vertices.clone()
+        self._configured_vertices = self.mesh_container.vertices.clone()
+        self._device = torch.device(device) if isinstance(device, str) else device
 
     def configure(self, q: torch.FloatTensor, ht_root: torch.FloatTensor = None) -> None:
         q = self._normalize_q(q)
-        if q.shape[0] != self._batch_size:
-            raise ValueError(f"Batch size mismatch. Meshes: {self._batch_size}, joint states: {q.shape[0]}.")
+        if q.shape[0] != self.mesh_container.batch_size:
+            raise ValueError(f"Batch size mismatch. Meshes: {self.mesh_container.batch_size}, joint states: {q.shape[0]}.")
         if ht_root is None:
             ht_root = torch.eye(4, dtype=q.dtype, device=q.device).unsqueeze(0)
 
         fk = self._chain.forward_kinematics(q)
-        self._configured_vertices = self.vertices.clone()
-        for link_name in self.mesh_names:
-            if link_name not in fk or link_name not in self._mesh_origins_lookup:
+        self._configured_vertices = self.mesh_container.vertices.clone()
+        for link_name in self.mesh_container.names:
+            if link_name not in fk:
                 continue
-            ht = fk[link_name].get_matrix() @ self._mesh_origins_lookup[link_name]
+            ht = fk[link_name].get_matrix()
             self._configured_vertices[
                 :,
-                self.lower_vertex_index_lookup[link_name] : self.upper_vertex_index_lookup[link_name],
+                self.mesh_container.lower_vertex_index_lookup[link_name] : self.mesh_container.upper_vertex_index_lookup[link_name],
             ] = torch.matmul(
                 torch.matmul(
                     self._configured_vertices[
                         :,
-                        self.lower_vertex_index_lookup[link_name] : self.upper_vertex_index_lookup[link_name],
+                        self.mesh_container.lower_vertex_index_lookup[link_name] : self.mesh_container.upper_vertex_index_lookup[link_name],
                     ],
                     ht.transpose(-1, -2),
                 ),
@@ -291,8 +289,27 @@ class FullTreeRobot(TorchMeshContainer):
     def configured_vertices(self) -> torch.FloatTensor:
         return self._configured_vertices
 
+    @property
+    def mesh_container(self) -> TorchMeshContainer:
+        return self._mesh_container
 
-def create_robot_scene_from_urdf(
+    @property
+    def device(self) -> torch.device:
+        return self._device
+
+
+def robot_from_data(robot_data, batch_size: int, device: torch.device | str) -> Robot:
+    mesh_container = TorchMeshContainer(meshes=robot_data.meshes, batch_size=batch_size, device=device)
+    kinematics = TorchKinematics(
+        urdf=robot_data.urdf,
+        root_link_name=robot_data.root_link_name,
+        end_link_name=robot_data.end_link_name,
+        device=device,
+    )
+    return Robot(mesh_container=mesh_container, kinematics=kinematics)
+
+
+def create_robot_scene_from_urdf_file(
     batch_size: int,
     urdf_path: Path,
     root_link_name: str,
@@ -302,15 +319,9 @@ def create_robot_scene_from_urdf(
     collision: bool = False,
 ) -> RobotScene:
     urdf_path = Path(urdf_path).expanduser().resolve()
-    parser = LocalURDFParser(urdf_path.parent)
-    parser.from_urdf(urdf_path.read_text())
-
-    if root_link_name == "":
-        root_link_name = parser.link_names_with_meshes(collision=collision)[0]
-    if end_link_name == "":
-        end_link_name = parser.link_names_with_meshes(collision=collision)[-1]
 
     if end_link_name in {"__all__", "all", "*"}:
+        parser = LocalURDFParser.from_file(urdf_path)
         robot = FullTreeRobot(
             urdf_parser=parser,
             collision=collision,
@@ -318,12 +329,32 @@ def create_robot_scene_from_urdf(
             device=device,
         )
     else:
-        robot = Robot(
-            urdf_parser=parser,
+        robot_data = load_robot_data_from_urdf_file(
+            urdf_path=urdf_path,
             root_link_name=root_link_name,
             end_link_name=end_link_name,
             collision=collision,
-            batch_size=batch_size,
-            device=device,
         )
+        robot = robot_from_data(robot_data, batch_size=batch_size, device=device)
+    return RobotScene(cameras=cameras, robot=robot, renderer=NVDiffRastRenderer(device=device))
+
+
+def create_robot_scene_from_ros_xacro(
+    batch_size: int,
+    ros_package: str,
+    xacro_path: str | Path,
+    root_link_name: str,
+    end_link_name: str,
+    cameras: dict[str, VirtualCamera],
+    device: torch.device | str,
+    collision: bool = False,
+) -> RobotScene:
+    robot_data = load_robot_data_from_ros_xacro(
+        ros_package=ros_package,
+        xacro_path=xacro_path,
+        root_link_name=root_link_name,
+        end_link_name=end_link_name,
+        collision=collision,
+    )
+    robot = robot_from_data(robot_data, batch_size=batch_size, device=device)
     return RobotScene(cameras=cameras, robot=robot, renderer=NVDiffRastRenderer(device=device))

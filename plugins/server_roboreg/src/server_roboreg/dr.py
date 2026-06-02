@@ -10,7 +10,6 @@ import numpy as np
 import pytorch_kinematics as pk
 from roboreg.losses import soft_dice_loss
 from roboreg.util import mask_distance_transform, mask_exponential_decay, overlay_mask
-from roboreg.util.factories import create_robot_scene
 import torch
 import tyro
 
@@ -60,9 +59,10 @@ def render_cv_w2c(
     flip = torch.diag(torch.tensor([1.0, -1.0, -1.0, 1.0], dtype=w2c.dtype, device=w2c.device))
     mvp = opencv_projection(intr, width, height) @ (flip @ w2c)
     observed_vertices = torch.matmul(renderer.scene.robot.configured_vertices, mvp.transpose(-1, -2))
+    faces = renderer.scene.robot.mesh_container.faces
     render = renderer.scene.renderer.constant_color(
         observed_vertices,
-        renderer.scene.robot.faces,
+        faces,
         renderer.scene.cameras[renderer.camera_name].resolution,
     )
     return torch.flip(render, dims=[1])
@@ -367,6 +367,8 @@ def mono(
     joint_states,
     masks,
 ) -> None:
+    from roboreg.util.factories import create_robot_scene
+
     from server_roboreg.old_cli.rr_mono_dr import args_factory
 
     args = args_factory()
