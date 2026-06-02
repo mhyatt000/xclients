@@ -96,7 +96,7 @@ def main_arrayrecord(cfg: Config) -> None:
                 continue
 
             records, dream_masks, initial = result
-            dr_records, _ = select_dr_records(cfg, records, dream_masks)
+            dr_records, dr_dream_masks = select_dr_records(cfg, records, dream_masks)
             camera_id = safe_camera_id(camera)
             shard_id = safe_camera_id(shard.shard_id)
             out_key = f"{shard_id}__{camera_id}"
@@ -108,10 +108,23 @@ def main_arrayrecord(cfg: Config) -> None:
             cam_cfg.output_dir.mkdir(parents=True, exist_ok=True)
             for record in dr_records:
                 write_image(cam_cfg.output_dir / "images" / f"{record.stem}_image.png", record.image)
-            dr_masks, dr_records = collect_sam_masks_with_records(cam_cfg, dr_records)
-            logging.info("Using %d SAM-masked frames for roboreg DR", len(dr_records))
 
             ht = assert_dream_pose(initial, len(dr_records))
+            try:
+                dr_masks, dr_records = collect_sam_masks_with_records(cam_cfg, dr_records)
+            except ValueError as exc:
+                if "SAM produced no usable masks" not in str(exc):
+                    raise
+                logging.warning(
+                    "SAM produced no usable masks for shard=%s camera=%s; using DREAM extrinsics without DR",
+                    shard.shard_id,
+                    camera,
+                )
+                save_outputs(cam_cfg, dr_records, dr_dream_masks, initial, None)
+                ht_by_camera[out_key] = ht
+                continue
+            logging.info("Using %d SAM-masked frames for roboreg DR", len(dr_records))
+
             dr_out = run_dr(cam_cfg, dr_records, dr_masks, ht) if cfg.run_dr else None
             save_outputs(cam_cfg, dr_records, dr_masks, initial, dr_out)
             ht_by_camera[out_key] = ht if dr_out is None else dr_out["HT"]
