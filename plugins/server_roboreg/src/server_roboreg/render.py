@@ -6,13 +6,13 @@ from dataclasses import dataclass
 import os
 
 import numpy as np
-from roboreg.differentiable import VirtualCamera
+from roboreg.core import VirtualCamera
 from roboreg.util import overlay_mask
-from roboreg.util.factories import create_robot_scene
 import torch
 from tqdm import tqdm
 
 from server_roboreg.common import HydraConfig
+from server_roboreg.roboreg_api import create_robot_scene, load_robot_data
 
 
 @dataclass
@@ -54,15 +54,18 @@ class Renderer:
             )
         }
 
-        self.scene = create_robot_scene(
-            batch_size=rcfg.batch_size,
-            ros_package=cfg.ros_package,
-            xacro_path=cfg.xacro_path,
+        robot_data = load_robot_data(
+            urdf=cfg.urdf,
             root_link_name=cfg.root_link_name,
             end_link_name=cfg.end_link_name,
+            collision=cfg.collision_meshes,
+        )
+
+        self.scene = create_robot_scene(
+            robot_data=robot_data,
+            batch_size=rcfg.batch_size,
             cameras=camera,
             device=self.device,
-            collision=cfg.collision_meshes,
         )
 
         self.camera = camera

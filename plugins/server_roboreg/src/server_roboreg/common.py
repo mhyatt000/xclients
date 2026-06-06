@@ -49,7 +49,7 @@ class HydraConfig:
 
     ros_package: str = "xarm_description"
     xacro_path: str = "urdf/xarm_device.urdf.xacro"
-    urdf: Path = Path()
+    urdf: Path = Path("xarm7_standalone.urdf")
     root_link_name: str = "link_base"
     end_link_name: str = "link7"
     collision_meshes: bool = False

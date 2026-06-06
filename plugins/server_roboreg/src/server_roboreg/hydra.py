@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import jax
 import numpy as np
-from roboreg.differentiable import Robot
 from roboreg.hydra_icp import hydra_centroid_alignment, hydra_robust_icp
-from roboreg.io import URDFParser
 from roboreg.util import (
     clean_xyz,
     compute_vertex_normals,
@@ -21,6 +19,7 @@ from webpolicy.server import Server
 
 from server_roboreg.common import HydraConfig
 from server_roboreg.dr import DR
+from server_roboreg.roboreg_api import create_robot, load_robot_data
 
 
 class Hydra(BasePolicy):
@@ -28,25 +27,13 @@ class Hydra(BasePolicy):
         self.cfg = cfg
         self.hist = []
 
-        # parse URDF once
-        parser = URDFParser()
-        parser.from_ros_xacro(
-            ros_package=cfg.ros_package,
-            xacro_path=cfg.xacro_path,
-        )
-
-        root = cfg.root_link_name
-        end = cfg.end_link_name
-
-        if root == "":
-            root = parser.link_names_with_meshes(collision=cfg.collision_meshes)[0]
-        if end == "":
-            end = parser.link_names_with_meshes(collision=cfg.collision_meshes)[-1]
-
-        self.urdf_parser = parser
-        self.root_link_name = root
-        self.end_link_name = end
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.robot_data = load_robot_data(
+            urdf=cfg.urdf,
+            root_link_name=cfg.root_link_name,
+            end_link_name=cfg.end_link_name,
+            collision=cfg.collision_meshes,
+        )
 
         self.dr = DR(cfg.dr, cfg)
         self.r = None
@@ -123,12 +110,10 @@ class Hydra(BasePolicy):
         # ----------------------------------------------------
         # Robot FK
         # ----------------------------------------------------
-        robot = Robot(
-            urdf_parser=self.urdf_parser,
-            root_link_name=self.root_link_name,
-            end_link_name=self.end_link_name,
-            collision=cfg.collision_meshes,
+        robot = create_robot(
+            robot_data=self.robot_data,
             batch_size=batch,
+            device=device,
         )
 
         joint_states = torch.tensor(np.array(joints_list), dtype=torch.float32, device=device)
@@ -138,7 +123,9 @@ class Hydra(BasePolicy):
         mesh_vertices = from_homogeneous(robot.configured_vertices)
         mesh_vertices = [mesh_vertices[i].contiguous() for i in range(batch)]
 
-        mesh_normals = [compute_vertex_normals(vertices=mesh_vertices[i], faces=robot.faces) for i in range(batch)]
+        mesh_normals = [
+            compute_vertex_normals(vertices=mesh_vertices[i], faces=robot.mesh_container.faces) for i in range(batch)
+        ]
 
         # ----------------------------------------------------
         # Depth → XYZ

@@ -12,12 +12,12 @@ from rich import print
 import rich.progress
 from roboreg.losses import soft_dice_loss
 from roboreg.util import mask_distance_transform, mask_exponential_decay, overlay_mask
-from roboreg.util.factories import create_robot_scene
 import torch
 import tyro
 
 from server_roboreg.common import DRConfig, HydraConfig, REGISTRATION_MODE
 from server_roboreg.render import Renderer, RendererConfig
+from server_roboreg.roboreg_api import create_robot_scene, load_robot_data
 
 
 class DR:
@@ -194,13 +194,15 @@ def mono(
     # instantiate camera with default identity extrinsics because we optimize for robot pose instead
 
     # instantiate robot scene
-    scene = create_robot_scene(
-        batch_size=joint_states.shape[0],
-        ros_package=args.ros_package,
-        xacro_path=args.xacro_path,
+    robot_data = load_robot_data(
+        urdf=getattr(args, "urdf", "xarm7_standalone.urdf"),
         root_link_name=args.root_link_name,
         end_link_name=args.end_link_name,
         collision=args.collision_meshes,
+    )
+    scene = create_robot_scene(
+        robot_data=robot_data,
+        batch_size=joint_states.shape[0],
         cameras=camera,
         device=device,
     )
