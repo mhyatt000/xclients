@@ -1,16 +1,18 @@
 from __future__ import annotations
 
-from server_roboreg.common import HydraConfig
-from server_roboreg.hydra import Hydra
+import logging
+
+from server_roboreg.server import RegConfig, RegistrationPolicy
 import tyro
 from webpolicy.server import Server
 
 
-def main(cfg: HydraConfig):
-    policy = Hydra(cfg)
+def main(cfg: RegConfig):
+    logging.basicConfig(level=logging.INFO)
+    policy = RegistrationPolicy(cfg)
     server = Server(policy, cfg.host, cfg.port)
     server.serve()
 
 
 if __name__ == "__main__":
-    main(tyro.cli(HydraConfig))
+    main(tyro.cli(RegConfig))
