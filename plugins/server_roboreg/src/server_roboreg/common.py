@@ -28,7 +28,7 @@ class DRConfig:
     step_size: int = 100
     gamma: float = 1.0
 
-    mode: REGISTRATION_MODE = REGISTRATION_MODE.DISTANCE_FUNCTION
+    mode: REGISTRATION_MODE = REGISTRATION_MODE.SEGMENTATION
     display_progress: bool = False
 
     ros_package: str = "xarm_description"
