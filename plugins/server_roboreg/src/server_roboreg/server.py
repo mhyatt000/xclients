@@ -4,10 +4,11 @@ from dataclasses import dataclass, field, replace
 from typing import Literal
 
 from rich import print
+from webpolicy.base_policy import BasePolicy
+
 from server_roboreg.common import HydraConfig
 from server_roboreg.dr import DR
 from server_roboreg.hydra import Hydra
-from webpolicy.base_policy import BasePolicy
 
 
 @dataclass
