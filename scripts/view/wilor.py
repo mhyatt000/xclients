@@ -72,6 +72,8 @@ class WilorConfig(Config):
     jpeg_quality: int = 75
     point_radius: float = 0.008
     ema_n: int = 4  # EMA smoothing horizon for PnP-refined kp3d; 1 disables smoothing
+    onlineplanner_host: str | None = None
+    onlineplanner_port: int | None = None
 
     def __post_init__(self) -> None:
         self.extr = Path(self.extr).expanduser().resolve()
@@ -79,6 +81,8 @@ class WilorConfig(Config):
             self.cap = self.cap.expanduser().resolve()
         if self.rrd_path is not None:
             self.rrd_path = self.rrd_path.expanduser().resolve()
+        if (self.onlineplanner_host is None) != (self.onlineplanner_port is None):
+            raise ValueError("Pass both onlineplanner_host and onlineplanner_port, or neither.")
 
 
 def load_world_from_camera_flu(path: Path) -> NDArray[np.float64]:
@@ -209,7 +213,7 @@ def log_frame(
     hands: list[dict],
     world_from_cam_flu: NDArray[np.float64],
     smoother: HandSmoother,
-) -> None:
+) -> NDArray[np.float32]:
     cam_root = f"{cfg.world_path}/cam/{cfg.camera_name}"
     image_path = f"{cam_root}/image"
     hand_root = f"{cfg.world_path}/hands"
@@ -220,6 +224,7 @@ def log_frame(
     rr.log(hand_root, rr.Clear(recursive=True))
     rr.log(hand_root, rr.CoordinateFrame(frame=cfg.world_path), static=True)
     k = camera_intrinsics(cfg, frame)
+    kp3d_world_hands = []
 
     for i, hand in enumerate(hands):
         color = hand_color(i)
@@ -253,10 +258,19 @@ def log_frame(
         rr.log(kp3d_path, rr.Points3D(kp3d_world, colors=color, radii=cfg.point_radius))
         rr.log(kp3d_bones_path, rr.CoordinateFrame(frame=cfg.world_path), static=True)
         rr.log(kp3d_bones_path, rr.LineStrips3D(kp3d_world[HAND_EDGES], colors=color, radii=cfg.point_radius * 0.5))
+        kp3d_world_hands.append(kp3d_world)
+
+    if not kp3d_world_hands:
+        return np.zeros((0, 21, 3), dtype=np.float32)
+    return np.stack(kp3d_world_hands, axis=0)
 
 
 def run_wilor(client: Client, frame: NDArray[np.uint8]) -> tuple[NDArray[np.uint8], dict]:
     return frame, client.step({"image": frame, "type": "image"})
+
+
+def run_onlineplanner(client: Client, kp3d: NDArray[np.float32]) -> dict:
+    return client.step({"kp3d": kp3d})
 
 
 def main(cfg: WilorConfig) -> None:
@@ -272,11 +286,22 @@ def main(cfg: WilorConfig) -> None:
 
     client = Client(cfg.host, cfg.port)
     worker = LatestWorker(lambda image: run_wilor(client, image), name="wilor-view-worker")
+    planner_client = (
+        Client(cfg.onlineplanner_host, cfg.onlineplanner_port)
+        if cfg.onlineplanner_host is not None and cfg.onlineplanner_port is not None
+        else None
+    )
+    planner_worker = (
+        LatestWorker(lambda kp3d: run_onlineplanner(planner_client, kp3d), name="onlineplanner-worker")
+        if planner_client is not None
+        else None
+    )
     smoother = HandSmoother(cfg.ema_n)
     start = time.monotonic()
     step = 0
     last_result_seq = 0
     last_error_seq = 0
+    last_planner_error_seq = 0
 
     logging.info("Polling camera %s and sending latest frames to %s:%s", cfg.cap, cfg.host, cfg.port)
     try:
@@ -295,9 +320,22 @@ def main(cfg: WilorConfig) -> None:
             elif result is not None and result.value is not None and result.seq != last_result_seq:
                 result_frame, out = result.value
                 hands = out.get("hands") or []
-                log_frame(cfg, result_frame, hands, world_from_cam_flu, smoother)
+                kp3d = log_frame(cfg, result_frame, hands, world_from_cam_flu, smoother)
+                if planner_worker is not None and len(kp3d) > 0:
+                    planner_worker.submit(kp3d[0])
                 display = result_frame
                 last_result_seq = result.seq
+
+            if planner_worker is not None:
+                planner_result = planner_worker.latest()
+                if (
+                    planner_result is not None
+                    and planner_result.error is not None
+                    and planner_result.seq != last_planner_error_seq
+                ):
+                    error = planner_result.error
+                    logging.error("onlineplanner failed", exc_info=(type(error), error, error.__traceback__))
+                    last_planner_error_seq = planner_result.seq
 
             if cfg.show:
                 cv2.imshow(f"WiLoR {cfg.cap}", display)
@@ -311,6 +349,8 @@ def main(cfg: WilorConfig) -> None:
             step += 1
     finally:
         worker.close()
+        if planner_worker is not None:
+            planner_worker.close()
         cap.release()
         cv2.destroyAllWindows()
 
