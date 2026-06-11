@@ -103,6 +103,13 @@ def draw_hand_overlay(frame: NDArray[np.uint8], hand: dict) -> NDArray[np.uint8]
     return overlay
 
 
+def draw_hands_overlay(frame: NDArray[np.uint8], hands: list[dict]) -> NDArray[np.uint8]:
+    overlay = frame.copy()
+    for hand in hands:
+        overlay = draw_hand_overlay(overlay, hand)
+    return overlay
+
+
 def print_projection_debug(hand: dict, frame: NDArray[np.uint8]) -> None:
     keypoints_3d = np.asarray(hand["keypoints_3d"], dtype=np.float32)
     cam_t = np.asarray(hand["cam_t"], dtype=np.float64)
@@ -158,16 +165,16 @@ def main(cfg: MyConfig) -> None:
                     if not hands:
                         logging.warning("No hand keypoints detected in the frame.")
                     else:
-                        hand = hands[0]
-                        print(hand["focal_length"])
-                        print_projection_debug(hand, result_frame)
+                        for i, hand in enumerate(hands):
+                            print({"hand": i, "focal_length": hand["focal_length"]})
+                            print_projection_debug(hand, result_frame)
                     last_logged_seq = result.seq
 
                 if hands and cfg.show:
-                    hand = hands[0]
+                    overlay_hands = hands
                     if cfg.fxy is not None:
-                        hand = {**hand, "focal_length": cfg.fxy}
-                    display = draw_hand_overlay(result_frame, hand)
+                        overlay_hands = [{**hand, "focal_length": cfg.fxy} for hand in hands]
+                    display = draw_hands_overlay(result_frame, overlay_hands)
 
             if cfg.show or result is None or result.value is None or not (result.value[1].get("hands") or []):
                 cv2.imshow("frame", display)
