@@ -15,7 +15,7 @@ class URDFConfig:
     ros_package: str = "xarm_description"
     xacro_path: str = "urdf/xarm_device.urdf.xacro"
     root_link_name: str = "link_base"
-    end_link_name: str = "link7"
+    end_link_name: str = "link_eef"
     collision_meshes: bool = False
 
 
@@ -27,14 +27,17 @@ class DRConfig:
     max_iterations: int = int(1e3)
     step_size: int = 100
     gamma: float = 1.0
+    early_stop_patience: int = 0
+    early_stop_min_delta: float = 1e-5
 
     mode: REGISTRATION_MODE = REGISTRATION_MODE.SEGMENTATION
     display_progress: bool = False
+    optimize_intrinsics: bool = False
 
     ros_package: str = "xarm_description"
     xacro_path: str = "urdf/xarm_device.urdf.xacro"
     root_link_name: str = "link_base"
-    end_link_name: str = "link7"
+    end_link_name: str = "link_eef"
     collision_meshes: bool = False
 
     camera_info_file: str = ""
@@ -51,7 +54,7 @@ class HydraConfig:
     xacro_path: str = "urdf/xarm_device.urdf.xacro"
     urdf: Path = Path()
     root_link_name: str = "link_base"
-    end_link_name: str = "link7"
+    end_link_name: str = "link_eef"
     collision_meshes: bool = False
 
     depth_conversion_factor: float = 1.0

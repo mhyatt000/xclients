@@ -446,7 +446,21 @@
   <gazebo reference="link7">
     <selfCollide>true</selfCollide>
   </gazebo>
-  <link name="link_eef"/>
+  <link name="link_eef">
+    <visual>
+      <geometry>
+        <mesh filename="assets/xarm_gripper_fixed_open.stl"/>
+      </geometry>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <material name="Silver"/>
+    </visual>
+    <collision>
+      <geometry>
+        <mesh filename="assets/xarm_gripper_fixed_open.stl"/>
+      </geometry>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+    </collision>
+  </link>
   <joint name="joint_eef" type="fixed">
     <origin rpy="0 0 0" xyz="0 0 0"/>
     <parent link="link7"/>
