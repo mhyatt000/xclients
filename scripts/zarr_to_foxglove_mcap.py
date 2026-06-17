@@ -1,9 +1,10 @@
-"""Convert one bela zarr episode to a Foxglove protobuf MCAP."""
+"""Convert bela zarr episodes to Foxglove protobuf MCAP files."""
 
 from __future__ import annotations
 
 import argparse
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 import json
 import math
 from pathlib import Path
@@ -30,9 +31,6 @@ import zarr
 
 from xclients.messages import Gripper
 
-DEFAULT_EPISODE = Path(
-    "~/bela_zarr/single/lift/2026-05-25_1932_episode_000001"
-).expanduser()
 RAW_IMAGE_ENCODING = "yuv422_yuy2"
 COLOR_RAW_ENCODING = "rgb8"
 
@@ -63,7 +61,22 @@ def warn_short_topic(topic: str, expected: int, actual: int) -> None:
         print(f"warning: {topic} has {actual}/{expected} complete samples; skipped {skipped}")
 
 
-def write_raw_image(topic: str, group: zarr.Group) -> int:
+@dataclass(frozen=True, order=True)
+class WriteEvent:
+    stamp_ns: int
+    topic: str
+    sample_idx: int
+
+
+@dataclass(frozen=True)
+class TopicWriter:
+    topic: str
+    group: zarr.Group
+    count: int
+    write_sample: Callable[[int], None]
+
+
+def prepare_raw_image(topic: str, group: zarr.Group) -> TopicWriter:
     data = group["data"]
     stamps = group["stamp_ns"]
     count = complete_len(group, ("data", "stamp_ns"))
@@ -77,7 +90,7 @@ def write_raw_image(topic: str, group: zarr.Group) -> int:
     step = width * 2
     channel = RawImageChannel(topic)
 
-    for idx in tqdm(range(count), desc=topic, unit="msg"):
+    def write_sample(idx: int) -> None:
         stamp_ns = int(stamps[idx])
         frame = np.ascontiguousarray(data[idx])
         channel.log(
@@ -92,7 +105,8 @@ def write_raw_image(topic: str, group: zarr.Group) -> int:
             ),
             log_time=stamp_ns,
         )
-    return count
+
+    return TopicWriter(topic, group, count, write_sample)
 
 
 def bytes_from_zarr(value: object) -> bytes:
@@ -115,24 +129,26 @@ def raw_image_from_bytes(payload: bytes, format_name: str) -> tuple[np.ndarray, 
     if decoded.ndim == 2:
         return np.ascontiguousarray(decoded), "mono8"
     if decoded.ndim == 3 and decoded.shape[2] == 3:
-        return np.ascontiguousarray(cv2.cvtColor(decoded, cv2.COLOR_BGR2RGB)), COLOR_RAW_ENCODING
+        frame = cv2.cvtColor(decoded, cv2.COLOR_BGR2RGB)
+        return np.ascontiguousarray(frame), COLOR_RAW_ENCODING
     if decoded.ndim == 3 and decoded.shape[2] == 4:
-        return np.ascontiguousarray(cv2.cvtColor(decoded, cv2.COLOR_BGRA2RGBA)), "rgba8"
+        frame = cv2.cvtColor(decoded, cv2.COLOR_BGRA2RGBA)
+        return np.ascontiguousarray(frame), "rgba8"
     raise ValueError(f"unsupported decoded image shape {decoded.shape} for {format_name!r}")
 
 
-def write_compressed_image(topic: str, group: zarr.Group) -> int:
+def prepare_compressed_image(topic: str, group: zarr.Group) -> TopicWriter:
     count = complete_len(group, ("data", "format", "stamp_ns"))
+    warn_short_topic(topic, group["stamp_ns"].shape[0], count)
     channel = RawImageChannel(topic)
 
-    for idx in tqdm(range(count), desc=topic, unit="msg"):
+    def write_sample(idx: int) -> None:
         stamp_ns = int(group["stamp_ns"][idx])
         frame, encoding = raw_image_from_bytes(
             bytes_from_zarr(group["data"][idx]),
             str(group["format"][idx]),
         )
         height, width = frame.shape[:2]
-        step = int(frame.strides[0])
         channel.log(
             RawImage(
                 timestamp=stamp_from_ns(stamp_ns),
@@ -140,12 +156,13 @@ def write_compressed_image(topic: str, group: zarr.Group) -> int:
                 width=width,
                 height=height,
                 encoding=encoding,
-                step=step,
+                step=int(frame.strides[0]),
                 data=frame.tobytes(),
             ),
             log_time=stamp_ns,
         )
-    return count
+
+    return TopicWriter(topic, group, count, write_sample)
 
 
 def parse_joint_names(value: object) -> list[str]:
@@ -156,13 +173,13 @@ def parse_joint_names(value: object) -> list[str]:
     return parsed
 
 
-def write_joint_states(topic: str, group: zarr.Group) -> int:
+def prepare_joint_states(topic: str, group: zarr.Group) -> TopicWriter:
     keys = ("name_json", "position", "velocity", "effort", "stamp_ns")
     count = complete_len(group, keys)
     warn_short_topic(topic, group["stamp_ns"].shape[0], count)
     channel = JointStatesChannel(topic)
 
-    for idx in tqdm(range(count), desc=topic, unit="msg"):
+    def write_sample(idx: int) -> None:
         stamp_ns = int(group["stamp_ns"][idx])
         names = parse_joint_names(group["name_json"][idx])
         positions = group["position"][idx].tolist()
@@ -183,25 +200,28 @@ def write_joint_states(topic: str, group: zarr.Group) -> int:
             JointStates(timestamp=stamp_from_ns(stamp_ns), joints=joints),
             log_time=stamp_ns,
         )
-    return count
+
+    return TopicWriter(topic, group, count, write_sample)
 
 
-def write_gripper(topic: str, group: zarr.Group) -> int:
+def prepare_gripper(topic: str, group: zarr.Group) -> TopicWriter:
     count = complete_len(group, ("json", "stamp_ns"))
+    warn_short_topic(topic, group["stamp_ns"].shape[0], count)
     channel = foxglove.Channel(
         topic,
         schema=Gripper.schema,
         message_encoding="protobuf",
     )
 
-    for idx in tqdm(range(count), desc=topic, unit="msg"):
+    def write_sample(idx: int) -> None:
         stamp_ns = int(group["stamp_ns"][idx])
         payload = json.loads(str(group["json"][idx]))
         values = payload.get("data")
         if not isinstance(values, list) or len(values) != 1:
             raise ValueError(f"{topic} expected one gripper value, got {payload!r}")
         channel.log(Gripper.encode(stamp_ns, norm=float(values[0])), log_time=stamp_ns)
-    return count
+
+    return TopicWriter(topic, group, count, write_sample)
 
 
 def rpy_to_quaternion(roll: float, pitch: float, yaw: float) -> Quaternion:
@@ -219,11 +239,12 @@ def rpy_to_quaternion(roll: float, pitch: float, yaw: float) -> Quaternion:
     )
 
 
-def write_robot_poses(topic: str, group: zarr.Group) -> int:
+def prepare_robot_poses(topic: str, group: zarr.Group) -> TopicWriter:
     count = complete_len(group, ("json", "stamp_ns"))
+    warn_short_topic(topic, group["stamp_ns"].shape[0], count)
     channel = PoseChannel(topic)
 
-    for idx in tqdm(range(count), desc=topic, unit="msg"):
+    def write_sample(idx: int) -> None:
         stamp_ns = int(group["stamp_ns"][idx])
         payload = json.loads(str(group["json"][idx]))
         values = payload.get("pose")
@@ -239,45 +260,79 @@ def write_robot_poses(topic: str, group: zarr.Group) -> int:
             ),
             log_time=stamp_ns,
         )
-    return count
 
+    return TopicWriter(topic, group, count, write_sample)
+
+
+def prepare_topic_writer(topic: str, group: zarr.Group) -> TopicWriter:
+    mode = str(group.attrs.get("mode", ""))
+    if mode == "image":
+        return prepare_raw_image(topic, group)
+    if mode == "compressed_image":
+        return prepare_compressed_image(topic, group)
+    if mode == "joint_state":
+        return prepare_joint_states(topic, group)
+    if mode == "json":
+        if topic == "/xgym/gripper":
+            return prepare_gripper(topic, group)
+        if topic == "/xarm/robot_states":
+            return prepare_robot_poses(topic, group)
+        raise ValueError(f"{topic} has unsupported json payload")
+    raise ValueError(f"{topic} has unsupported mode {mode!r}")
+
+
+def write_events(writers: dict[str, TopicWriter]) -> None:
+    events = [
+        WriteEvent(int(writer.group["stamp_ns"][idx]), topic, idx)
+        for topic, writer in writers.items()
+        for idx in range(writer.count)
+    ]
+    events.sort()
+
+    for event in tqdm(events, desc="messages", unit="msg"):
+        writers[event.topic].write_sample(event.sample_idx)
 
 def convert_episode(episode: Path, output: Path, overwrite: bool) -> None:
     root = zarr.open_group(episode, mode="r")
-    counts: dict[str, int] = {}
 
     with foxglove.open_mcap(str(output), allow_overwrite=overwrite):
-        for topic, group in topic_groups(root):
-            mode = str(group.attrs.get("mode", ""))
-            if mode == "image":
-                counts[topic] = write_raw_image(topic, group)
-            elif mode == "compressed_image":
-                counts[topic] = write_compressed_image(topic, group)
-            elif mode == "joint_state":
-                counts[topic] = write_joint_states(topic, group)
-            elif mode == "json":
-                if topic == "/xgym/gripper":
-                    counts[topic] = write_gripper(topic, group)
-                elif topic == "/xarm/robot_states":
-                    counts[topic] = write_robot_poses(topic, group)
-                else:
-                    raise ValueError(f"{topic} has unsupported json payload")
-            else:
-                raise ValueError(f"{topic} has unsupported mode {mode!r}")
+        writers = {
+            topic: prepare_topic_writer(topic, group)
+            for topic, group in topic_groups(root)
+        }
+        write_events(writers)
 
     print(f"wrote {output}")
-    for topic, count in counts.items():
-        print(f"  {topic}: {count} messages")
+    for topic, writer in writers.items():
+        print(f"  {topic}: {writer.count} messages")
+
+
+def is_episode_dir(path: Path) -> bool:
+    return path.is_dir() and (path / "zarr.json").is_file() and (path / "topics").is_dir()
+
+
+def episode_dirs(input_dir: Path) -> list[Path]:
+    if is_episode_dir(input_dir):
+        return [input_dir]
+
+    episodes = sorted(path for path in input_dir.iterdir() if is_episode_dir(path))
+    if not episodes:
+        raise ValueError(f"no zarr episode directories found under {input_dir}")
+    return episodes
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--episode", type=Path, default=DEFAULT_EPISODE)
+    parser.add_argument(
+        "input_dir",
+        type=Path,
+        help="Directory containing zarr episodes, or one zarr episode directory.",
+    )
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("~/Downloads"),
-        help="Directory for the output MCAP. Defaults to ~/Downloads.",
+        required=True,
+        help="Directory for output MCAP files.",
     )
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
@@ -285,9 +340,15 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    episode = args.episode.expanduser()
-    output = args.output_dir.expanduser() / f"{episode.name}.mcap"
-    convert_episode(episode, output, args.overwrite)
+    input_dir = args.input_dir.expanduser()
+    output_dir = args.output_dir.expanduser()
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    episodes = episode_dirs(input_dir)
+    print(f"found {len(episodes)} episode(s) under {input_dir}")
+    for episode in episodes:
+        output = output_dir / f"{episode.name}.mcap"
+        convert_episode(episode, output, args.overwrite)
 
 
 if __name__ == "__main__":
