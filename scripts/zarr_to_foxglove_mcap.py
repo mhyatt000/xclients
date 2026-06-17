@@ -7,17 +7,15 @@ from collections.abc import Sequence
 import json
 import math
 from pathlib import Path
-import struct
 
+import cv2
 import foxglove
 from foxglove.channels import (
-    CompressedImageChannel,
     JointStatesChannel,
     PoseChannel,
     RawImageChannel,
 )
 from foxglove.messages import (
-    CompressedImage,
     JointState,
     JointStates,
     Pose,
@@ -30,15 +28,13 @@ import numpy as np
 from tqdm import tqdm
 import zarr
 
+from xclients.messages import Gripper
+
 DEFAULT_EPISODE = Path(
     "~/bela_zarr/single/lift/2026-05-25_1932_episode_000001"
 ).expanduser()
 RAW_IMAGE_ENCODING = "yuv422_yuy2"
-FLOAT64_SCHEMA = foxglove.Schema(
-    name="foxglove.Float64",
-    encoding="protobuf",
-    data=b"\x0a\x45\n\x18foxglove/Float64.proto\x12\x08foxglove\"\x1f\n\x07Float64\x12\x14\n\x05value\x18\x01 \x01(\x01R\x05value",
-)
+COLOR_RAW_ENCODING = "rgb8"
 
 
 def stamp_from_ns(stamp_ns: int) -> Timestamp:
@@ -99,18 +95,53 @@ def write_raw_image(topic: str, group: zarr.Group) -> int:
     return count
 
 
+def bytes_from_zarr(value: object) -> bytes:
+    while isinstance(value, np.ndarray) and value.shape == ():
+        value = value.item()
+    if isinstance(value, bytes):
+        return value
+    if isinstance(value, np.bytes_):
+        return bytes(value)
+    raise TypeError(f"expected bytes-like zarr value, got {type(value)!r}")
+
+
+def raw_image_from_bytes(payload: bytes, format_name: str) -> tuple[np.ndarray, str]:
+    decoded = cv2.imdecode(np.frombuffer(payload, dtype=np.uint8), cv2.IMREAD_UNCHANGED)
+    if decoded is None:
+        raise ValueError(
+            f"could not decode compressed image payload with format {format_name!r}"
+        )
+
+    if decoded.ndim == 2:
+        return np.ascontiguousarray(decoded), "mono8"
+    if decoded.ndim == 3 and decoded.shape[2] == 3:
+        return np.ascontiguousarray(cv2.cvtColor(decoded, cv2.COLOR_BGR2RGB)), COLOR_RAW_ENCODING
+    if decoded.ndim == 3 and decoded.shape[2] == 4:
+        return np.ascontiguousarray(cv2.cvtColor(decoded, cv2.COLOR_BGRA2RGBA)), "rgba8"
+    raise ValueError(f"unsupported decoded image shape {decoded.shape} for {format_name!r}")
+
+
 def write_compressed_image(topic: str, group: zarr.Group) -> int:
     count = complete_len(group, ("data", "format", "stamp_ns"))
-    channel = CompressedImageChannel(topic)
+    channel = RawImageChannel(topic)
 
     for idx in tqdm(range(count), desc=topic, unit="msg"):
         stamp_ns = int(group["stamp_ns"][idx])
+        frame, encoding = raw_image_from_bytes(
+            bytes_from_zarr(group["data"][idx]),
+            str(group["format"][idx]),
+        )
+        height, width = frame.shape[:2]
+        step = int(frame.strides[0])
         channel.log(
-            CompressedImage(
+            RawImage(
                 timestamp=stamp_from_ns(stamp_ns),
                 frame_id="",
-                data=bytes(group["data"][idx]),
-                format=str(group["format"][idx]),
+                width=width,
+                height=height,
+                encoding=encoding,
+                step=step,
+                data=frame.tobytes(),
             ),
             log_time=stamp_ns,
         )
@@ -155,15 +186,11 @@ def write_joint_states(topic: str, group: zarr.Group) -> int:
     return count
 
 
-def encode_float64(value: float) -> bytes:
-    return b"\x09" + struct.pack("<d", value)
-
-
 def write_gripper(topic: str, group: zarr.Group) -> int:
     count = complete_len(group, ("json", "stamp_ns"))
     channel = foxglove.Channel(
         topic,
-        schema=FLOAT64_SCHEMA,
+        schema=Gripper.schema,
         message_encoding="protobuf",
     )
 
@@ -173,7 +200,7 @@ def write_gripper(topic: str, group: zarr.Group) -> int:
         values = payload.get("data")
         if not isinstance(values, list) or len(values) != 1:
             raise ValueError(f"{topic} expected one gripper value, got {payload!r}")
-        channel.log(encode_float64(float(values[0])), log_time=stamp_ns)
+        channel.log(Gripper.encode(stamp_ns, norm=float(values[0])), log_time=stamp_ns)
     return count
 
 
