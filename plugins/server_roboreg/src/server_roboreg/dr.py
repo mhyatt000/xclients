@@ -60,19 +60,18 @@ class DR:
         print("extrinsics", extrinsics)
 
         _b, h, w = payload["depth"].shape
-        if self.r is None:
-            self.r = Renderer(
-                self.hcfg,
-                RendererConfig(
-                    batch_size=len(joints),
-                ),
-                intr=payload["intrinsics"],
-                # no extrinsics provided, initialize with identity
-                # then optimize with the grad extrinsics
-                extr=None,  # extrinsics,
-                height=h,
-                width=w,
-            )
+        self.r = Renderer(
+            self.hcfg,
+            RendererConfig(
+                batch_size=len(joints),
+            ),
+            intr=payload["intrinsics"],
+            # no extrinsics provided, initialize with identity
+            # then optimize with the grad extrinsics
+            extr=None,  # extrinsics,
+            height=h,
+            width=w,
+        )
 
         joints = torch.tensor(np.array(payload["joints"]), dtype=torch.float32, device=self.device)
         if self.cfg.mode == REGISTRATION_MODE.DISTANCE_FUNCTION:
@@ -82,10 +81,23 @@ class DR:
         else:
             raise ValueError("Invalid registration mode.")
         targets = torch.tensor(np.array(targets), dtype=torch.float32, device=self.device).unsqueeze(-1)
+        target_masks = torch.tensor(np.array(masks) > 0, dtype=torch.bool, device=self.device)
+
+        def calculate_batch_iou(rast: torch.Tensor) -> float:
+            rast_masks = rast.squeeze(-1) > 0
+            intersections = torch.logical_and(target_masks, rast_masks).sum(dim=(1, 2))
+            unions = torch.logical_or(target_masks, rast_masks).sum(dim=(1, 2))
+            ious = torch.where(
+                unions > 0,
+                intersections.float() / unions.float(),
+                torch.zeros_like(unions, dtype=torch.float32),
+            )
+            return float(ious.mean().item())
 
         # load extrinsics estimate
         extrinsics = torch.tensor(extrinsics, dtype=torch.float32, device=self.device)
         extrinsics_inv = torch.linalg.inv(extrinsics)
+        first_extrinsics_inv = extrinsics_inv.detach().clone()
 
         # enable gradient tracking and instantiate optimizer
         extrinsics_9d_inv = pk.matrix44_to_se3_9d(extrinsics_inv)
@@ -114,6 +126,13 @@ class DR:
                 loss = soft_dice_loss(targets, renders["camera"]).mean()
             else:
                 raise ValueError("Invalid registration mode.")
+            iou = calculate_batch_iou(renders["camera"])
+
+            if iou == 0.0: # avoid optimizing if no overlap between render and mask to prevent bad local minima
+                return {
+                    "iou": iou,
+                    "ious": [0.0] * len(masks),
+                }
 
             optimizer.zero_grad()
             loss.backward()
@@ -121,7 +140,7 @@ class DR:
             scheduler.step()
 
             rich.print(
-                f"Step [{iteration} / {self.cfg.max_iterations}], loss: {np.round(loss.item(), 3)}, best loss: {np.round(best_loss, 3)}, lr: {scheduler.get_last_lr().pop()}"
+                f"Step [{iteration} / {self.cfg.max_iterations}], loss: {np.round(loss.item(), 3)}, best loss: {np.round(best_loss, 3)}, iou: {np.round(iou, 3)}, lr: {scheduler.get_last_lr().pop()}"
             )
 
             if loss.item() < best_loss:
@@ -129,24 +148,50 @@ class DR:
                 best_extrinsics_inv = extrinsics_inv.detach().clone()
                 best_extrinsics = torch.linalg.inv(best_extrinsics_inv)
 
-        # render final results and save extrinsics
+        # render initial and final results
         with torch.no_grad():
+            self.r.scene.robot.configure(joints, first_extrinsics_inv)
+            first_renders = self.r.scene.observe_from("camera").squeeze(-1)
+
             self.r.scene.robot.configure(joints, best_extrinsics_inv)
             renders = self.r.scene.observe_from("camera").squeeze(-1)
 
-        outs = []
-        for i, render in enumerate(renders):
-            render = render.cpu().numpy()
+        def overlay_purple_mask(img: np.ndarray, mask: np.ndarray, scale: float = 1.0) -> np.ndarray:
+            colored_mask = np.stack([mask, np.zeros_like(mask), mask], axis=2)
+            overlay = cv2.addWeighted(img, 0.5, colored_mask, 0.5, 0.0)
+            return cv2.resize(overlay, [int(size * scale) for size in overlay.shape[:2][::-1]])
 
+        def calculate_iou(mask: np.ndarray, rast_mask: np.ndarray) -> float:
+            mask_bool = mask > 0
+            rast_bool = rast_mask > 0
+            intersection = np.logical_and(mask_bool, rast_bool).sum()
+            union = np.logical_or(mask_bool, rast_bool).sum()
+            return float(intersection / union) if union else 0.0
+
+        outs = []
+        ious = []
+        for i, (first_render, render) in enumerate(zip(first_renders, renders, strict=True)):
+            first_render = first_render.cpu().numpy()
+            render = render.cpu().numpy()
             im = images[i]  # im = np.stack([images[i]]*3, axis=-1).astype(np.uint8)
             im = (im - im.min()) / (im.max() - im.min()) * 255.0
             im = im.astype(np.uint8)
 
+            first_rmask = (first_render * 255.0).astype(np.uint8)
+            first_rast = overlay_purple_mask(im, first_rmask, scale=1.0)
+            first_both = overlay_mask(first_rast, masks[i], mode="g", scale=1.0)
+            first_difference = np.abs(first_render - masks[i].astype(np.float32) / 255.0)
+            first_difference = overlay_mask(
+                im,
+                (first_difference * 255.0).astype(np.uint8),
+                mode="r",
+                scale=1.0,
+            )
+
             rmask = (render * 255.0).astype(np.uint8)
-            print(im.shape, im.dtype, rmask.shape, rmask.dtype)
-            print(im.min(), im.max(), rmask.min(), rmask.max())
-            print(im.sum(), rmask.sum())
-            overlay = overlay_mask(im, rmask, self.r.color, scale=1.0)
+            rast = overlay_mask(im, rmask, self.r.color, scale=1.0)
+            ious.append(calculate_iou(masks[i], rmask))
+
             difference = np.abs(render - masks[i].astype(np.float32) / 255.0)
             difference = overlay_mask(
                 im,
@@ -155,15 +200,27 @@ class DR:
                 scale=1.0,
             )
 
+            both = overlay_mask(rast, masks[i], mode="g", scale=1.0)
+
             out = {
-                "overlays": overlay,
+                "first": {
+                    "rast": first_rast,
+                    "both": first_both,
+                    "difference": first_difference,
+                },
+                "rast": rast,
+                "both": both,
                 # 'difference': (difference* 255.0).astype(np.uint8),
                 "difference": difference,
             }
             outs.append(out)
 
         outs = jax.tree.map(lambda *x: np.stack(x), *outs)
-        outs = outs | {"HT": best_extrinsics.cpu().numpy()}
+        outs = outs | {
+            "HT": best_extrinsics.cpu().numpy(),
+            "iou": float(np.mean(ious)) if ious else 0.0,
+            "ious": ious,
+        }
         return outs
 
 
