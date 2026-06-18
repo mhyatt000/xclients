@@ -20,6 +20,13 @@ class URDFConfig:
 
 
 @dataclass
+class EarlyStoppingConfig:
+    loss: float | None = None
+    iou: float | None = 0.01
+    patience: int = 100
+
+
+@dataclass
 class DRConfig:
     # Optimization settings
     optimizer: str = "Adam"
@@ -40,6 +47,7 @@ class DRConfig:
     camera_info_file: str = ""
     extrinsics_file: str = ""
     max_jobs: int = 1
+    early: EarlyStoppingConfig = field(default_factory=EarlyStoppingConfig)
 
 
 @dataclass

@@ -109,6 +109,11 @@ class DR:
         best_extrinsics = extrinsics
         best_extrinsics_inv = extrinsics_inv
         best_loss = float("inf")
+        early = self.cfg.early
+        early_best_loss = float("inf")
+        early_best_iou = float("-inf")
+        loss_wait = 0
+        iou_wait = 0
 
         for iteration in rich.progress.track(range(1, self.cfg.max_iterations + 1), "Optimizing..."):
             if not extrinsics_9d_inv.requires_grad:
@@ -128,7 +133,7 @@ class DR:
                 raise ValueError("Invalid registration mode.")
             iou = calculate_batch_iou(renders["camera"])
 
-            if iou == 0.0: # avoid optimizing if no overlap between render and mask to prevent bad local minima
+            if iou == 0.0:  # avoid optimizing if no overlap between render and mask to prevent bad local minima
                 return {
                     "iou": iou,
                     "ious": [0.0] * len(masks),
@@ -147,6 +152,29 @@ class DR:
                 best_loss = loss.item()
                 best_extrinsics_inv = extrinsics_inv.detach().clone()
                 best_extrinsics = torch.linalg.inv(best_extrinsics_inv)
+
+            stop_reasons = []
+            if early.loss is not None:
+                if early_best_loss - loss.item() > early.loss:
+                    early_best_loss = loss.item()
+                    loss_wait = 0
+                else:
+                    loss_wait += 1
+                    if loss_wait >= early.patience:
+                        stop_reasons.append(f"loss did not improve by {early.loss}")
+
+            if early.iou is not None:
+                if iou - early_best_iou > early.iou:
+                    early_best_iou = iou
+                    iou_wait = 0
+                else:
+                    iou_wait += 1
+                    if iou_wait >= early.patience:
+                        stop_reasons.append(f"iou did not improve by {early.iou}")
+
+            if stop_reasons:
+                rich.print(f"Early stopping after {iteration} steps: {', '.join(stop_reasons)}")
+                break
 
         # render initial and final results
         with torch.no_grad():
