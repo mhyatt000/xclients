@@ -146,6 +146,37 @@ class PrepConfig(Config):
     show_first_only: bool = False
 
 
+def make_intrinsics(w: int = 640, h: int = 480, fx: float = 515.0, fy: float = 515.0) -> np.ndarray:
+    """Pinhole intrinsics K with a centered principal point. PnP needs no extrinsics."""
+    cx, cy = w / 2, h / 2
+    return np.array([[fx, 0.0, cx], [0.0, fy, cy], [0.0, 0.0, 1.0]])
+
+
+def extract_kp3d_step(step: dict, *, client: Client, K: np.ndarray) -> dict:
+    """Per-camera single-view hand lift for one timestep.
+
+    step: {cam_name: frame[H, W, 3] uint8 RGB}. Runs WiLoR per view and places
+    each hand into that camera's own frame via lift_hand_pnp (no cross-view
+    fusing). Returns step augmented with per-camera kp3d_cam / kp2d / visible;
+    no-hand views are zero-filled and flagged invisible rather than dropped.
+    """
+    kp3d_cam, kp2d_all, visible = {}, {}, {}
+    for cam, img in step.items():
+        out = client.step({"image": img})  # recordings are RGB; wilor expects RGB
+        hand = (out.get("hands") or [None])[0]
+        if hand and "keypoints_2d" in hand:
+            kp2d = np.asarray(hand["keypoints_2d"], dtype=np.float64)  # [21, 2]
+            kp3d_rel = np.asarray(hand["keypoints_3d"], dtype=np.float64)  # [21, 3] wrist-rel
+            placed, _R, _t = lift_hand_pnp(kp2d, kp3d_rel, K)  # [21, 3] in cam frame
+            kp3d_cam[cam], kp2d_all[cam], visible[cam] = placed, kp2d, True
+        else:
+            # no hand this cam/frame: keep the frame, mask it, fill placeholders
+            kp3d_cam[cam] = np.zeros((NJOINTS, 3))
+            kp2d_all[cam] = np.zeros((NJOINTS, 2))
+            visible[cam] = False
+    return dict(step) | {"kp3d_cam": kp3d_cam, "kp2d": kp2d_all, "visible": visible}
+
+
 def main(cfg: PrepConfig):
     # Per-camera single-view PnP. Cameras move between episodes, so instead of
     # triangulating across views we lift each camera independently with
@@ -154,38 +185,11 @@ def main(cfg: PrepConfig):
     # flag so no-hand frames are masked rather than dropped.
     client = Client(host=cfg.host, port=cfg.port)
     eps = list(cfg.dir.glob("ep*.npz"))
-
-    h, w = 480, 640
-    cx, cy = w / 2, h / 2
-    fx, fy = 515.0, 515.0
-    K = np.array([[fx, 0.0, cx], [0.0, fy, cy], [0.0, 0.0, 1.0]])  # assumed; PnP needs no extrinsics
+    K = make_intrinsics(w=640, h=480)
 
     for ep_path in tqdm(eps):
         ep = Episode.from_npz(ep_path)
-        steps = []
-
-        for s in tqdm(ep, leave=False):  # s = {cam_name: frame[H, W, 3]} at this timestep
-            kp3d_cam, kp2d_all, visible = {}, {}, {}
-
-            for k, img in s.items(): # key is the frame's camera name, value is the image for that camera at this timestep
-                out = client.step({"image": img})  # recordings are RGB; wilor expects RGB
-                hand = (out.get("hands") or [None])[0]
-
-                # if hand is returned and visible:
-                if hand and "keypoints_2d" in hand:
-                    kp2d = np.asarray(hand["keypoints_2d"], dtype=np.float64)  # [21, 2]
-                    kp3d_rel = np.asarray(hand["keypoints_3d"], dtype=np.float64)  # [21, 3] wrist-rel
-                    placed, _R, _t = lift_hand_pnp(kp2d, kp3d_rel, K)  # [21, 3] in cam frame
-                    kp3d_cam[k], kp2d_all[k], visible[k] = placed, kp2d, True
-
-                # no hand this cam/frame: keep the frame, mask it, fill placeholders
-                else:
-                    kp3d_cam[k] = np.zeros((NJOINTS, 3))
-                    kp2d_all[k] = np.zeros((NJOINTS, 2))
-                    visible[k] = False
-
-            steps.append(dict(s) | {"kp3d_cam": kp3d_cam, "kp2d": kp2d_all, "visible": visible})
-
+        steps = [extract_kp3d_step(dict(s), client=client, K=K) for s in tqdm(ep, leave=False)]
         episode = jax.tree.map(lambda *x: np.stack(x, axis=0), *steps)
         print(spec(episode))
         yield episode
