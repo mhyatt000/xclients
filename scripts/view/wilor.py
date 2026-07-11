@@ -58,7 +58,7 @@ HAND_COLORS = np.array(
 
 @dataclass
 class WilorConfig(Config):
-    extr: Path  # 4x4 camera-to-world transform in repo HT convention: camera FLU -> world
+    extr: Path | None = None  # 4x4 camera-to-world transform in repo HT convention: camera FLU -> world
     cap: int | Path = 0
     camera_name: str = "wilor"
     app_id: str = "wilor_view"
@@ -76,7 +76,7 @@ class WilorConfig(Config):
     onlineplanner_port: int | None = None
 
     def __post_init__(self) -> None:
-        self.extr = Path(self.extr).expanduser().resolve()
+        self.extr = Path(self.extr).expanduser().resolve() if self.extr else None
         if isinstance(self.cap, Path):
             self.cap = self.cap.expanduser().resolve()
         if self.rrd_path is not None:
@@ -274,7 +274,7 @@ def run_onlineplanner(client: Client, kp3d: NDArray[np.float32]) -> dict:
 
 
 def main(cfg: WilorConfig) -> None:
-    world_from_cam_flu = load_world_from_camera_flu(cfg.extr)
+    world_from_cam_flu = load_world_from_camera_flu(cfg.extr) if cfg.extr else np.eye(4)
     cap = cv2.VideoCapture(str(cfg.cap) if isinstance(cfg.cap, Path) else cfg.cap)
     if not cap.isOpened():
         raise RuntimeError(f"Failed to open camera {cfg.cap}")
