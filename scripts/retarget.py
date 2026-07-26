@@ -20,10 +20,12 @@ from webpolicy.client import Client
 from xclients.core.cfg import Config
 from xclients.core.latest_worker import LatestWorker
 from xclients.core.tf import FLU2RDF
+from xclients.hw.footpedal import FootPedal, FootPedalConfig
+from xclients.hw.xarm_driver import XArmDriver, XArmDriverConfig
 from xclients.motion import default_units, EndEffector, RetargetPolicy, unit_assets
+from xclients.motion.embodiment import HOME_DXARM
 from xclients.triangulate import lift_hand_pnp
 from xclients.viser_webui import ViserWebUI
-from xclients.xarm_driver import XArmDriver, XArmDriverConfig
 
 logging.basicConfig(level=logging.INFO)
 
@@ -56,6 +58,8 @@ class RetargetConfig(Config):
     right_ee: EndEffector = "gripper"  # end effector on dxarm-r
     left_ip: str | None = None  # dxarm-l controller (192.168.1.238); None disables driving
     right_ip: str | None = None  # dxarm-r controller (192.168.1.231); None disables driving
+    home: float | None = None  # home-bias cost weight for both arms (dataclass default 0.1)
+    tune: bool = False  # viser sliders that supersede the passed weights
     # Ruka self-collision: drop hand-internal pairs, check hand-vs-arm via one fitted
     # bounding sphere (~630 -> ~190 pairs). --no-coarse-hand-coll restores full fidelity.
     coarse_hand_coll: bool = True
@@ -202,8 +206,17 @@ def main(cfg: RetargetConfig) -> None:
         left_ee=cfg.left_ee,
         right_ee=cfg.right_ee,
         coarse_hand_coll=cfg.coarse_hand_coll,
+        home=cfg.home,
     )
     ui = ViserWebUI(assets=unit_assets(units))
+    if cfg.tune:
+        ui.add_tuner(
+            "home",
+            cfg.home if cfg.home is not None else 0.1,
+            0.0,
+            5.0,
+            lambda v: [unit.planner.set_home(v) for unit in units.values()],
+        )
     h, w = frame.shape[:2]
     ui.add_camera(
         "cam",
@@ -218,11 +231,13 @@ def main(cfg: RetargetConfig) -> None:
     policy = RetargetPolicy(units)
     policy_worker = LatestWorker(lambda hands: policy.step({"hands": hands}), name="retarget-policy")
     drivers: dict[str, XArmDriver] = {}
-    driver_workers: dict[str, LatestWorker] = {}
     for name, ip in (("dxarm-l", cfg.left_ip), ("dxarm-r", cfg.right_ip)):
         if ip is not None:
             drivers[name] = XArmDriver(XArmDriverConfig(ip=ip, gripper=False, clear=True))
-            driver_workers[name] = LatestWorker(drivers[name].step, name=f"{name}-driver")
+    # Deadman gates: pedal b streams live retarget targets, pedal c walks the arms toward
+    # HOME_DXARM, neither held clears the targets so the streams pause and the arms stay put.
+    gate = {"live": False, "home": False}
+    pedal = FootPedal(FootPedalConfig(deadman=True), hooks=[lambda s: gate.update(live=s["b"], home=s["c"])]) if drivers else None
     # Warm up the solver JIT immediately so it compiles before hands appear (~1 min cold, seconds cached).
     warmup_kp3d = {}
     for slot, y in (("left", -0.3), ("right", 0.3)):
@@ -242,13 +257,14 @@ def main(cfg: RetargetConfig) -> None:
     last_error_seq = 0
     last_policy_seq = 0
     last_policy_error_seq = 0
-    last_driver_error_seq = {name: 0 for name in driver_workers}
     policy_updates = 0
     prev_cfgs: dict[str, NDArray[np.float64]] = {}
 
     logging.info("Polling camera %s and sending latest frames to %s:%s", cfg.cap, cfg.host, cfg.port)
     try:
         while cfg.limit is None or step < cfg.limit:
+            if pedal is not None:
+                pedal.step({})
             worker.submit(frame.copy())
             result = worker.latest()
 
@@ -295,16 +311,19 @@ def main(cfg: RetargetConfig) -> None:
                     prev_cfgs = cfgs
                     policy_updates += 1
                     ui.step(cfgs)
-                    for name, driver_worker in driver_workers.items():
-                        driver_worker.submit({"q": cfgs[name], "aperture": policy_result.value[name]["aperture"]})
+                    if gate["live"]:
+                        for name, driver in drivers.items():
+                            if driver.error is None:  # a streaming failure already logged itself
+                                driver.step({"q": cfgs[name], "aperture": policy_result.value[name]["aperture"]})
                 last_policy_seq = policy_result.seq
 
-            for name, driver_worker in driver_workers.items():
-                driver_result = driver_worker.latest()
-                if driver_result is not None and driver_result.error is not None and driver_result.seq != last_driver_error_seq[name]:
-                    error = driver_result.error
-                    logging.error("%s driver failed", name, exc_info=(type(error), error, error.__traceback__))
-                    last_driver_error_seq[name] = driver_result.seq
+            if not gate["live"] and gate["home"]:
+                for driver in drivers.values():
+                    if driver.error is None:
+                        driver.step({"q": HOME_DXARM, "aperture": None})
+            elif not gate["live"]:
+                for driver in drivers.values():
+                    driver.hold()
 
             ret, frame = cap.read()
             if not ret:
@@ -313,10 +332,10 @@ def main(cfg: RetargetConfig) -> None:
             ui.update_camera_image("cam", frame[..., ::-1])
             step += 1
     finally:
+        if pedal is not None:
+            pedal.close()
         worker.close()
         policy_worker.close()
-        for driver_worker in driver_workers.values():
-            driver_worker.close()
         for driver in drivers.values():
             driver.close()
         cap.release()

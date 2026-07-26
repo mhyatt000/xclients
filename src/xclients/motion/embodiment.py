@@ -15,14 +15,17 @@ from xclients import urdf_compose as uc
 REPO_ROOT = Path(__file__).resolve().parents[3]
 XARM_GRIPPER_URDF = REPO_ROOT / "retarget_helpers" / "hand" / "xarm" / "xarm7_standalone.urdf"
 RUKA_URDF = {
-    "left": REPO_ROOT / "urdf" / "ruka" / "robot-left.urdf",
-    "right": REPO_ROOT / "urdf" / "ruka" / "robot.urdf",
+    "left": REPO_ROOT / "urdf" / "ruka" / "rukav2-all-left.urdf",
+    "right": REPO_ROOT / "urdf" / "ruka" / "rukav2-all.urdf",
 }
 GENERATED_DIR = REPO_ROOT / "urdf" / "generated"
 
 # HOME_DXARM for dxarm: q = np.zeros(7), q[1] = -30 deg. The rest posture inits here and
 # the home-bias cost pulls the arm joints back here.
 HOME_DXARM = np.deg2rad([0.0, -30.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+# Per-joint home-bias hierarchy for joints 1..7: park the big slow joints ({1,2,4})
+# harder than the rolls ({3,5}) and the wrist ({6,7}), so tracking recruits the wrist first.
+ARM_HIERARCHY = np.array([4.0, 4.0, 2.0, 4.0, 2.0, 1.0, 1.0])
 XARM_ARM_JOINTS = tuple(f"joint{i}" for i in range(1, 8))
 XARM_GRIPPER_CUT_JOINT = "gripper_fix"  # link_eef -> xarm_gripper_base_link
 XARM_FLANGE_LINK = "link_eef"
@@ -32,10 +35,30 @@ RUKA_TIP_LINKS = tuple(
     RUKA_PREFIX + name
     for name in ("thumb_actual_tip", "index_actual_tip", "middle_actual_tip", "ring_actual_tip", "pinky_actual_tip")
 )
-# Measured flange -> ruka mount offset, from 06-10_xarm_ruka_bimanual_teleop.py's
-# HAND_MOUNT_XYZ (the ruka base sits ~3.8 cm off the eef center, not on it).
-T_FLANGE_RUKA = np.eye(4)
-T_FLANGE_RUKA[:3, 3] = (0.00216402, 0.0382359, 0.00282698)
+# Flange pose in the mount link frame, derived from RUKA_V2.step: bolt-circle
+# center and normal of the flange-mating face (ISO 9409-1-50 pattern, hand tilted
+# 40 deg off the flange axis). The 90-degree bolt yaw is not derivable from CAD
+# (square pattern, no pin hole); chosen visually against the real rig: left 270,
+# right 90 (mirror-consistent).
+_MOUNT_FLANGE_CENTER = np.array([-0.00238, 0.0377, -0.04183])
+_MOUNT_FLANGE_Z = np.array([0.0, -0.64279, 0.76604])
+
+
+def _t_flange_ruka(mirror: bool, yaw_deg: float) -> NDArray[np.float64]:
+    x = np.array([1.0, 0.0, 0.0])
+    T = np.eye(4)
+    T[:3, :3] = np.stack([x, np.cross(_MOUNT_FLANGE_Z, x), _MOUNT_FLANGE_Z], axis=1)
+    T[:3, 3] = _MOUNT_FLANGE_CENTER
+    if mirror:
+        mx = np.diag([-1.0, 1.0, 1.0, 1.0])
+        T = mx @ T @ mx
+    yaw = np.eye(4)
+    c, s = np.cos(np.radians(yaw_deg)), np.sin(np.radians(yaw_deg))
+    yaw[:3, :3] = np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
+    return yaw @ np.linalg.inv(T)
+
+
+T_FLANGE_RUKA = {"left": _t_flange_ruka(True, 270.0), "right": _t_flange_ruka(False, 90.0)}
 
 RUKA_ROOT_LINK = RUKA_PREFIX + "base_new"  # carries the coarse whole-hand collision proxy
 COARSE_HAND_PAD = 0.01  # padding added to the fitted hand bounding sphere
@@ -89,14 +112,18 @@ def arm_warmstart_rest_cfg(robot: pk.Robot) -> NDArray[np.float64]:
     return rest_cfg
 
 
-def arm_home_cfg_and_mask(robot: pk.Robot) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Full-dof HOME_DXARM vector and the 0/1 mask selecting the arm joints (by name)."""
+def arm_home_cfg_and_mask(robot: pk.Robot, hierarchy: bool = True) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Full-dof HOME_DXARM vector and the arm-joint weight mask (by name).
+
+    With hierarchy, the mask carries ARM_HIERARCHY per arm joint instead of 1.0;
+    non-arm joints are always 0.
+    """
     actuated = list(robot.joints.actuated_names)
     cfg = np.zeros(len(actuated))
     mask = np.zeros(len(actuated))
-    for name, angle in zip(XARM_ARM_JOINTS, HOME_DXARM):
+    for name, angle, scale in zip(XARM_ARM_JOINTS, HOME_DXARM, ARM_HIERARCHY):
         cfg[actuated.index(name)] = angle
-        mask[actuated.index(name)] = 1.0
+        mask[actuated.index(name)] = scale if hierarchy else 1.0
     return cfg, mask
 
 
@@ -140,7 +167,9 @@ def hand_bounding_sphere(urdf: yourdfpy.URDF, robot: pk.Robot) -> tuple[NDArray[
     for link in names:
         if not link.startswith(RUKA_PREFIX):
             continue
-        mesh = RobotCollision._get_trimesh_collision_geometries(urdf, link)  # noqa: SLF001
+        if link == RUKA_PREFIX + "mount":
+            continue  # bolted at the flange; including it would inflate the proxy into the wrist
+        mesh = RobotCollision._get_trimesh_collision_geometries(urdf, link)
         if mesh.vertices.shape[0] == 0:
             continue
         T = T_root_inv @ T_base_link(link)
@@ -184,7 +213,7 @@ def xarm_ruka(
     """
     model = uc.load_model(arm_urdf_path)
     uc.prune_subtree(model, XARM_GRIPPER_CUT_JOINT)
-    uc.attach(model, uc.load_model(RUKA_URDF[side]), XARM_FLANGE_LINK, T_FLANGE_RUKA, prefix=RUKA_PREFIX)
+    uc.attach(model, uc.load_model(RUKA_URDF[side]), XARM_FLANGE_LINK, T_FLANGE_RUKA[side], prefix=RUKA_PREFIX)
     model.name = f"xarm7_ruka_{side}"
     generated_path = uc.save(model, GENERATED_DIR / f"xarm7_ruka_{side}.urdf")
 

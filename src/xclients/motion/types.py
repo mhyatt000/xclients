@@ -42,6 +42,7 @@ class CostWeights:
     joint_limit: float = 100.0
     rest: float = 0.01
     home: float = 0.1  # small MSE bias of the arm joints toward HOME_DXARM
+    home_hierarchy: bool = True  # scale the home bias by ARM_HIERARCHY (park big joints harder)
     manipulability: float = 0.01
     self_collision: float = 10.0
     self_collision_margin: float = 0.02

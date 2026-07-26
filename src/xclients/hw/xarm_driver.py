@@ -1,6 +1,10 @@
 """Minimal xArm7 joint-position driver for the retarget stack.
 
-Streams servo-mode joint targets to a UFACTORY xArm7 over IP. The boundary is
+Streams servo-mode joint targets to a UFACTORY xArm7 over IP. step() stores a
+target; a driver-owned thread sends clamped set_servo_angle_j commands toward
+it at cfg.hz (manufacturer-style 100-250 Hz servo streaming), so callers can
+step() at any rate. hold() clears the target and stops the stream; a streaming
+error logs, stops the stream, and latches on self.error. The boundary is
 radians; obs["q"] is the planner's full config vector and only q[:7]
 (joint1..joint7) is driven. With cfg.gripper, obs["aperture"] (thumb-index
 distance, meters) maps to the normalized 0=closed/1=open hardware gripper; use
@@ -9,11 +13,11 @@ distance, meters) maps to the normalized 0=closed/1=open hardware gripper; use
 Standalone hardware test (lab arms: 192.168.1.231 / 192.168.1.238):
 
     # read-only state echo, no motion enable
-    python -m xclients.xarm_driver --ip 192.168.1.231
+    python -m xclients.hw.xarm_driver --ip 192.168.1.231
     # +-2 deg sinusoid on all joints through the real step() path
-    python -m xclients.xarm_driver --ip 192.168.1.231 --wiggle
+    python -m xclients.hw.xarm_driver --ip 192.168.1.231 --wiggle
     # one gripper close/open cycle
-    python -m xclients.xarm_driver --ip 192.168.1.231 --test-gripper
+    python -m xclients.hw.xarm_driver --ip 192.168.1.231 --test-gripper
 """
 
 from __future__ import annotations
@@ -21,6 +25,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import logging
 import math
+import threading
 import time
 
 import numpy as np
@@ -44,7 +49,8 @@ class XArmDriverConfig:
     ip: str  # controller address; no default so the wrong arm is never driven
     gripper: bool = True  # False for ruka or a bare flange
     clear: bool = False  # clean latched controller warnings/errors at connect
-    max_step: float = math.radians(1.0)  # rad, per joint, per step() call
+    hz: float = 150.0  # streaming-thread rate for set_servo_angle_j
+    max_step: float = math.radians(1.0)  # rad, per joint, per streamed command
     max_vel: float = 1.0  # rad/s per joint; effective clamp is min(max_step, max_vel * dt)
     gripper_open: float = 0.08  # aperture (m) that maps to a fully open gripper
 
@@ -52,9 +58,10 @@ class XArmDriverConfig:
 class XArmDriver(BasePolicy):
     """obs {"q": (dof,), "aperture": float | None} -> stream q[:7] (+ gripper) to the arm.
 
-    Connecting is passive; motion enable + servo mode happen on the first
-    step(), which also seeds the clamp origin from the measured joints so the
-    arm walks toward the first target at the clamped rate instead of jumping.
+    Connecting is passive; motion enable + servo mode + the cfg.hz streaming
+    thread start on the first step(), which also seeds the clamp origin from
+    the measured joints so the arm walks toward the first target at the
+    clamped rate instead of jumping.
     """
 
     def __init__(self, cfg: XArmDriverConfig) -> None:
@@ -76,6 +83,11 @@ class XArmDriver(BasePolicy):
         self._last: NDArray[np.float64] | None = None
         self._last_time = 0.0
         self._last_gripper: float | None = None
+        self._lock = threading.Lock()
+        self._target: NDArray[np.float64] | None = None
+        self._aperture: float | None = None
+        self._thread: threading.Thread | None = None
+        self.error: BaseException | None = None
         logging.info("connected to xArm at %s", cfg.ip)
 
     def joint_pos(self) -> NDArray[np.float64]:
@@ -94,21 +106,23 @@ class XArmDriver(BasePolicy):
             raise ValueError(f"expected q with at least {ARM_DOFS} joints, got shape {q.shape}")
         if not np.all(np.isfinite(q[:ARM_DOFS])):
             raise ValueError("q contains non-finite values")
+        if self.error is not None:
+            raise RuntimeError(f"xArm at {self.cfg.ip} streaming stopped") from self.error
         self._ensure_armed()
-        self._assert_ready()
-
-        now = time.monotonic()
-        limit = min(self.cfg.max_step, self.cfg.max_vel * (now - self._last_time))
-        target = self._last + np.clip(q[:ARM_DOFS] - self._last, -limit, limit)
-        self._check(self.arm.set_servo_angle_j(target.tolist(), is_radian=True), "set_servo_angle_j")
-        self._last, self._last_time = target, now
-
         aperture = obs.get("aperture")
-        if self.cfg.gripper and aperture is not None:
-            self._command_gripper(float(np.clip(float(aperture) / self.cfg.gripper_open, 0.0, 1.0)))
-        return {"joint_pos": target, "gripper": self._last_gripper}
+        with self._lock:
+            self._target = q[:ARM_DOFS].copy()
+            self._aperture = None if aperture is None else float(aperture)
+        return {"target": self._target, "gripper": self._last_gripper}
+
+    def hold(self) -> None:
+        """Clear the target: the streaming thread stops sending and the arm stays put."""
+        with self._lock:
+            self._target = None
+            self._aperture = None
 
     def reset(self, payload: dict | None = None) -> None:
+        self.hold()
         if self._armed:
             self._last = self.joint_pos()
             self._last_time = time.monotonic()
@@ -117,6 +131,8 @@ class XArmDriver(BasePolicy):
         if self._stopped:
             return
         self._stopped = True
+        if self._thread is not None:
+            self._thread.join(timeout=2.0 / self.cfg.hz + 1.0)
         try:
             if self._armed and getattr(self.arm, "connected", False):
                 for op, code in (
@@ -143,6 +159,37 @@ class XArmDriver(BasePolicy):
         self._last = self.joint_pos()
         self._last_time = time.monotonic()
         self._armed = True
+        self._thread = threading.Thread(target=self._stream, daemon=True, name=f"xarm-{self.cfg.ip}")
+        self._thread.start()
+
+    def _stream(self) -> None:
+        period = 1.0 / self.cfg.hz
+        next_tick = time.monotonic()
+        while not self._stopped:
+            next_tick += period
+            delay = next_tick - time.monotonic()
+            if delay > 0.0:
+                time.sleep(delay)
+            else:
+                next_tick = time.monotonic()  # fell behind; skip instead of bursting
+            with self._lock:
+                target, aperture = self._target, self._aperture
+            if target is None:
+                continue
+            try:
+                self._assert_ready()
+                now = time.monotonic()
+                limit = min(self.cfg.max_step, self.cfg.max_vel * (now - self._last_time))
+                cmd = self._last + np.clip(target - self._last, -limit, limit)
+                self._check(self.arm.set_servo_angle_j(cmd.tolist(), is_radian=True), "set_servo_angle_j")
+                self._last, self._last_time = cmd, now
+                if self.cfg.gripper and aperture is not None:
+                    self._command_gripper(float(np.clip(aperture / self.cfg.gripper_open, 0.0, 1.0)))
+            except Exception as exc:
+                self.error = exc
+                self.hold()
+                logging.error("xArm %s streaming stopped", self.cfg.ip, exc_info=True)
+                return
 
     def _command_gripper(self, normalized: float) -> None:
         if self._last_gripper is not None and abs(normalized - self._last_gripper) < GRIPPER_EPSILON:
@@ -174,7 +221,7 @@ class MainConfig(XArmDriverConfig):
     wiggle: bool = False  # stream a small all-joints sinusoid through step()
     test_gripper: bool = False  # one gripper close/open cycle
     seconds: float = 5.0  # wiggle duration
-    hz: float = 30.0  # wiggle step() rate
+    submit_hz: float = 30.0  # wiggle step() submit rate (streaming runs at cfg.hz regardless)
     amp_deg: float = 2.0  # wiggle amplitude
     period: float = 2.0  # wiggle period, seconds
 
@@ -192,13 +239,20 @@ def echo(driver: XArmDriver, cfg: MainConfig) -> None:
 
 def wiggle(driver: XArmDriver, cfg: MainConfig) -> None:
     q0 = driver.joint_pos()
-    logging.info("wiggling all joints +-%.1f deg for %.1fs at %.0f Hz", cfg.amp_deg, cfg.seconds, cfg.hz)
+    logging.info(
+        "wiggling all joints +-%.1f deg for %.1fs (submit %.0f Hz, stream %.0f Hz)",
+        cfg.amp_deg,
+        cfg.seconds,
+        cfg.submit_hz,
+        cfg.hz,
+    )
     start = time.monotonic()
     while (t := time.monotonic() - start) < cfg.seconds:
         q = q0 + math.radians(cfg.amp_deg) * math.sin(2.0 * math.pi * t / cfg.period)
         driver.step({"q": q, "aperture": None})
-        time.sleep(1.0 / cfg.hz)
+        time.sleep(1.0 / cfg.submit_hz)
     driver.step({"q": q0, "aperture": None})
+    time.sleep(0.2)  # let the stream walk back to q0 before close
 
 
 def gripper_cycle(driver: XArmDriver, cfg: MainConfig) -> None:

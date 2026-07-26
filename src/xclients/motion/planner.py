@@ -34,9 +34,9 @@ class OnlinePlanner:
         self.world_coll = world.in_base_frame(emb.world_T_base)
         self.world_masks = world.link_masks(list(emb.robot.links.names))
         self.target_link_indices = jnp.array([emb.robot.links.names.index(n) for n in emb.target_links])
-        home_cfg, home_mask = arm_home_cfg_and_mask(emb.robot)
+        home_cfg, self._home_mask = arm_home_cfg_and_mask(emb.robot, weights.home_hierarchy)
         self.home_cfg = jnp.asarray(home_cfg)
-        self.home_weight = jnp.asarray(weights.home * home_mask)
+        self.home_weight = jnp.asarray(weights.home * self._home_mask)
         self.sol_traj = emb.rest_cfg[None].repeat(len_traj, axis=0)
 
     def solve(self, targets: Targets) -> onp.ndarray:
@@ -68,6 +68,10 @@ class OnlinePlanner:
     def hold(self) -> onp.ndarray:
         """No target this tick: report the current head of the trajectory without advancing."""
         return self.sol_traj[0]
+
+    def set_home(self, home: float) -> None:
+        """Live-tunable: home_weight is a traced solver arg, so no recompile."""
+        self.home_weight = jnp.asarray(home * self._home_mask)
 
     def reset(self) -> None:
         self.sol_traj = self.emb.rest_cfg[None].repeat(self.len_traj, axis=0)

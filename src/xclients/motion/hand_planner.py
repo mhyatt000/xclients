@@ -65,6 +65,7 @@ class RukaWeights:
     joint_smoothness: float = 2.0
     rest: float = 0.05
     home: float = 0.1  # small MSE bias of the arm joints toward HOME_DXARM
+    home_hierarchy: bool = True  # scale the home bias by ARM_HIERARCHY (park big joints harder)
     limit: float = 100.0
     self_collision: float = 5.0
     self_collision_margin: float = 0.02
@@ -130,9 +131,9 @@ class HandPlanner:
         self.world_masks = world.link_masks(list(emb.robot.links.names))
         self.link_indices, self.mano_indices = mano_ruka_mapping(emb.robot)
         self.mano_mask = create_conn_tree(emb.robot, self.link_indices)
-        home_cfg, home_mask = arm_home_cfg_and_mask(emb.robot)
+        home_cfg, self._home_mask = arm_home_cfg_and_mask(emb.robot, weights.home_hierarchy)
         self.home_cfg = jnp.asarray(home_cfg)
-        self.home_weight = jnp.asarray(weights.home * home_mask)
+        self.home_weight = jnp.asarray(weights.home * self._home_mask)
         self.prev_cfg = onp.array(emb.rest_cfg)
 
     def solve(self, targets: KeypointTargets) -> onp.ndarray:
@@ -156,6 +157,10 @@ class HandPlanner:
 
     def hold(self) -> onp.ndarray:
         return self.prev_cfg
+
+    def set_home(self, home: float) -> None:
+        """Live-tunable: home_weight is a traced solver arg, so no recompile."""
+        self.home_weight = jnp.asarray(home * self._home_mask)
 
     def reset(self) -> None:
         self.prev_cfg = onp.array(self.emb.rest_cfg)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -68,6 +69,7 @@ class ViserWebUI:
         self._cameras: dict[str, viser.CameraFrustumHandle] = {}
         self._hand_points: dict[str, viser.PointCloudHandle] = {}
         self._hand_bones: dict[str, viser.LineSegmentsHandle] = {}
+        self._tune_folder: viser.GuiFolderHandle | None = None
 
         for name, asset in self.assets.items():
             root = f"/{name}"
@@ -82,6 +84,29 @@ class ViserWebUI:
             self._urdf_vis[name] = vis
             self._cfgs[name] = np.zeros(urdf.num_actuated_joints)
             vis.update_cfg(self._cfgs[name])
+
+    def add_tuner(
+        self,
+        label: str,
+        initial: float,
+        lo: float,
+        hi: float,
+        on_change: Callable[[float], None],
+        step: float | None = None,
+    ) -> viser.GuiInputHandle:
+        """Slider in the 'tune' GUI folder; calls on_change(value) as it moves."""
+        if self._tune_folder is None:
+            self._tune_folder = self.server.gui.add_folder("tune")
+        with self._tune_folder:
+            slider = self.server.gui.add_slider(
+                label,
+                min=lo,
+                max=hi,
+                step=step if step is not None else (hi - lo) / 100.0,
+                initial_value=initial,
+            )
+        slider.on_update(lambda _: on_change(float(slider.value)))
+        return slider
 
     def add_camera(
         self,
