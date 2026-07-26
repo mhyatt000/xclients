@@ -23,6 +23,7 @@ from xclients.core.tf import FLU2RDF
 from xclients.target import default_units, EndEffector, RetargetPolicy, unit_assets
 from xclients.triangulate import lift_hand_pnp
 from xclients.viser_webui import ViserWebUI
+from xclients.xarm_driver import XArmDriver, XArmDriverConfig
 
 logging.basicConfig(level=logging.INFO)
 
@@ -53,6 +54,8 @@ class RetargetConfig(Config):
     dt: float = 0.1
     left_ee: EndEffector = "gripper"  # end effector on dxarm-l
     right_ee: EndEffector = "gripper"  # end effector on dxarm-r
+    left_ip: str | None = None  # dxarm-l controller (192.168.1.238); None disables driving
+    right_ip: str | None = None  # dxarm-r controller (192.168.1.231); None disables driving
     # Ruka self-collision: drop hand-internal pairs, check hand-vs-arm via one fitted
     # bounding sphere (~630 -> ~190 pairs). --no-coarse-hand-coll restores full fidelity.
     coarse_hand_coll: bool = True
@@ -214,6 +217,12 @@ def main(cfg: RetargetConfig) -> None:
     worker = LatestWorker(lambda image: run_wilor(client, image), name="wilor-worker")
     policy = RetargetPolicy(units)
     policy_worker = LatestWorker(lambda hands: policy.step({"hands": hands}), name="retarget-policy")
+    drivers: dict[str, XArmDriver] = {}
+    driver_workers: dict[str, LatestWorker] = {}
+    for name, ip in (("dxarm-l", cfg.left_ip), ("dxarm-r", cfg.right_ip)):
+        if ip is not None:
+            drivers[name] = XArmDriver(XArmDriverConfig(ip=ip, gripper=False, clear=True))
+            driver_workers[name] = LatestWorker(drivers[name].step, name=f"{name}-driver")
     # Warm up the solver JIT immediately so it compiles before hands appear (~1 min cold, seconds cached).
     warmup_kp3d = {}
     for slot, y in (("left", -0.3), ("right", 0.3)):
@@ -233,6 +242,7 @@ def main(cfg: RetargetConfig) -> None:
     last_error_seq = 0
     last_policy_seq = 0
     last_policy_error_seq = 0
+    last_driver_error_seq = {name: 0 for name in driver_workers}
     policy_updates = 0
     prev_cfgs: dict[str, NDArray[np.float64]] = {}
 
@@ -285,7 +295,16 @@ def main(cfg: RetargetConfig) -> None:
                     prev_cfgs = cfgs
                     policy_updates += 1
                     ui.step(cfgs)
+                    for name, driver_worker in driver_workers.items():
+                        driver_worker.submit({"q": cfgs[name], "aperture": policy_result.value[name]["aperture"]})
                 last_policy_seq = policy_result.seq
+
+            for name, driver_worker in driver_workers.items():
+                driver_result = driver_worker.latest()
+                if driver_result is not None and driver_result.error is not None and driver_result.seq != last_driver_error_seq[name]:
+                    error = driver_result.error
+                    logging.error("%s driver failed", name, exc_info=(type(error), error, error.__traceback__))
+                    last_driver_error_seq[name] = driver_result.seq
 
             ret, frame = cap.read()
             if not ret:
@@ -296,6 +315,10 @@ def main(cfg: RetargetConfig) -> None:
     finally:
         worker.close()
         policy_worker.close()
+        for driver_worker in driver_workers.values():
+            driver_worker.close()
+        for driver in drivers.values():
+            driver.close()
         cap.release()
 
 
