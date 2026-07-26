@@ -12,14 +12,7 @@ import pyroki as pk
 
 from xclients.target.embodiment import Embodiment
 from xclients.target.types import CostWeights, Targets
-
-
-def floor_halfspace(world_T_base: onp.ndarray) -> pk.collision.HalfSpace:
-    """The world z=0 floor expressed in the robot base frame."""
-    base_T_world = onp.linalg.inv(world_T_base)
-    point = base_T_world[:3, 3]
-    normal = base_T_world[:3, :3] @ onp.array([0.0, 0.0, 1.0])
-    return pk.collision.HalfSpace.from_point_and_normal(point, normal)
+from xclients.target.world import World
 
 
 class OnlinePlanner:
@@ -31,13 +24,15 @@ class OnlinePlanner:
         weights: CostWeights = CostWeights(),
         len_traj: int = 5,
         dt: float = 0.1,
-        world_coll: Sequence[pk.collision.CollGeom] | None = None,
+        world: World | None = None,
     ) -> None:
         self.emb = emb
         self.weights = weights
         self.len_traj = len_traj
         self.dt = dt
-        self.world_coll = list(world_coll) if world_coll is not None else [floor_halfspace(emb.world_T_base)]
+        world = World.default() if world is None else world
+        self.world_coll = world.in_base_frame(emb.world_T_base)
+        self.world_masks = world.link_masks(list(emb.robot.links.names))
         self.target_link_indices = jnp.array([emb.robot.links.names.index(n) for n in emb.target_links])
         self.sol_traj = emb.rest_cfg[None].repeat(len_traj, axis=0)
 
@@ -53,6 +48,7 @@ class OnlinePlanner:
             self.emb.robot,
             self.emb.robot_coll,
             self.world_coll,
+            self.world_masks,
             jaxlie.SE3(jnp.asarray(wxyz_xyz)),
             self.target_link_indices,
             self.len_traj + 1,  # +1 for the start-anchor knot
@@ -77,6 +73,7 @@ def _solve_online_planning_jax(
     robot: pk.Robot,
     robot_coll: pk.collision.RobotCollision,
     world_coll: Sequence[pk.collision.CollGeom],
+    world_masks: Sequence[jnp.ndarray],
     target_poses: jaxlie.SE3,
     target_links: jnp.ndarray,
     timesteps: jdc.Static[int],
@@ -188,6 +185,8 @@ def _solve_online_planning_jax(
             for i in range(num_targets)
         ]
     )
+    # Per-link 0/1 masks implement each world geom's ignore list (e.g. the mount
+    # box exempts the base links bolted onto it).
     factors.extend(
         [
             pk.costs.world_collision_cost(
@@ -195,10 +194,10 @@ def _solve_online_planning_jax(
                 jax.tree.map(lambda x: x[None], robot_coll),
                 traj_var,
                 jax.tree.map(lambda x: x[None], obs),
-                weight=weights.world_collision,
+                weight=(weights.world_collision * mask)[None],
                 margin=weights.world_collision_margin,
             )
-            for obs in world_coll
+            for obs, mask in zip(world_coll, world_masks)
         ]
     )
 

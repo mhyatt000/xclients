@@ -53,6 +53,9 @@ class RetargetConfig(Config):
     dt: float = 0.1
     left_ee: EndEffector = "gripper"  # end effector on dxarm-l
     right_ee: EndEffector = "gripper"  # end effector on dxarm-r
+    # Ruka self-collision: drop hand-internal pairs, check hand-vs-arm via one fitted
+    # bounding sphere (~630 -> ~190 pairs). --no-coarse-hand-coll restores full fidelity.
+    coarse_hand_coll: bool = True
 
     def __post_init__(self) -> None:
         self.extr = Path(self.extr).expanduser().resolve() if self.extr else None
@@ -190,7 +193,13 @@ def main(cfg: RetargetConfig) -> None:
     if not ret:
         raise RuntimeError(f"Failed to read first frame from camera {cfg.cap}")
 
-    units = default_units(len_traj=cfg.len_traj, dt=cfg.dt, left_ee=cfg.left_ee, right_ee=cfg.right_ee)
+    units = default_units(
+        len_traj=cfg.len_traj,
+        dt=cfg.dt,
+        left_ee=cfg.left_ee,
+        right_ee=cfg.right_ee,
+        coarse_hand_coll=cfg.coarse_hand_coll,
+    )
     ui = ViserWebUI(assets=unit_assets(units))
     h, w = frame.shape[:2]
     ui.add_camera(
