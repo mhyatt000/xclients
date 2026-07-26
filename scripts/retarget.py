@@ -2,7 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import logging
+import os
 from pathlib import Path
+import time
+
+# Share the GPU with the WiLoR/SAM3 servers instead of preallocating 75% of it.
+os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
+# Persist XLA compilations: the planner's first solve costs ~1 min of JIT per cold cache.
+os.environ.setdefault("JAX_COMPILATION_CACHE_DIR", os.path.expanduser("~/.cache/jax"))
 
 import cv2
 import numpy as np
@@ -13,6 +20,7 @@ from webpolicy.client import Client
 from xclients.core.cfg import Config
 from xclients.core.latest_worker import LatestWorker
 from xclients.core.tf import FLU2RDF
+from xclients.target import default_units, EndEffector, RetargetPolicy, unit_assets
 from xclients.triangulate import lift_hand_pnp
 from xclients.viser_webui import ViserWebUI
 
@@ -31,12 +39,8 @@ DEFAULT_WORLD_FROM_CAM_FLU = np.array(
 
 @dataclass
 class RetargetConfig(Config):
-    # TEMP(debug): defaults added while onlineplanner is disabled below;
-    # revert to required fields when re-enabling.
-    port: int = 8084
+    port: int = 8084  # WiLoR server
     host: str = "localhost"
-    onlineplanner_host: str = "localhost"
-    onlineplanner_port: int = 8085
     extr: Path | None = None  # 4x4 camera-to-world transform in repo HT convention: camera FLU -> world
     cap: int | Path = 0
     fx: float = 515.0
@@ -45,6 +49,10 @@ class RetargetConfig(Config):
     ema_n: int = 4  # EMA smoothing horizon for PnP-refined kp3d; 1 disables smoothing
     offset_x: float = 0.0  # world-frame offset added to kp3d to shift hands into the robot workspace
     offset_z: float = 0.0
+    len_traj: int = 5  # online-planner horizon
+    dt: float = 0.1
+    left_ee: EndEffector = "gripper"  # end effector on dxarm-l
+    right_ee: EndEffector = "gripper"  # end effector on dxarm-r
 
     def __post_init__(self) -> None:
         self.extr = Path(self.extr).expanduser().resolve() if self.extr else None
@@ -172,10 +180,6 @@ def run_wilor(client: Client, frame: NDArray[np.uint8]) -> tuple[NDArray[np.uint
     return frame, client.step({"image": frame, "type": "image"})
 
 
-def run_onlineplanner(client: Client, kp3d: NDArray[np.float32]) -> dict:
-    return client.step({"kp3d": kp3d})
-
-
 def main(cfg: RetargetConfig) -> None:
     world_from_cam_flu = load_world_from_camera_flu(cfg.extr) if cfg.extr else DEFAULT_WORLD_FROM_CAM_FLU
     cap = cv2.VideoCapture(str(cfg.cap) if isinstance(cfg.cap, Path) else cfg.cap)
@@ -186,7 +190,8 @@ def main(cfg: RetargetConfig) -> None:
     if not ret:
         raise RuntimeError(f"Failed to read first frame from camera {cfg.cap}")
 
-    ui = ViserWebUI()
+    units = default_units(len_traj=cfg.len_traj, dt=cfg.dt, left_ee=cfg.left_ee, right_ee=cfg.right_ee)
+    ui = ViserWebUI(assets=unit_assets(units))
     h, w = frame.shape[:2]
     ui.add_camera(
         "cam",
@@ -198,22 +203,33 @@ def main(cfg: RetargetConfig) -> None:
 
     client = Client(cfg.host, cfg.port)
     worker = LatestWorker(lambda image: run_wilor(client, image), name="wilor-worker")
-    # TEMP(debug): onlineplanner disabled; WiLoR kp3d is plotted in the viser scene instead.
-    # planner_client = Client(cfg.onlineplanner_host, cfg.onlineplanner_port)
-    # planner_worker = LatestWorker(lambda kp3d: run_onlineplanner(planner_client, kp3d), name="onlineplanner-worker")
+    policy = RetargetPolicy(units)
+    policy_worker = LatestWorker(lambda hands: policy.step({"hands": hands}), name="retarget-policy")
+    # Warm up the solver JIT immediately so it compiles before hands appear (~1 min cold, seconds cached).
+    warmup_kp3d = {}
+    for slot, y in (("left", -0.3), ("right", 0.3)):
+        kp = np.tile(np.array([0.35, y, 0.45], dtype=np.float32), (21, 1))
+        kp[0] += [-0.05, 0.0, -0.03]
+        kp[4] += [0.05, 0.02, 0.0]
+        kp[8] += [0.05, -0.02, 0.0]
+        warmup_kp3d[slot] = kp
+    warmup_seq = policy_worker.submit(warmup_kp3d)
+    warmup_start = time.monotonic()
+    logging.info("compiling planner (first run can take ~1 min; cached in %s)...", os.environ["JAX_COMPILATION_CACHE_DIR"])
     smoother = HandSmoother(cfg.ema_n)
     tracker = HandTracker()
     kp3d_offset = np.array([cfg.offset_x, 0.0, cfg.offset_z], dtype=np.float32)
     step = 0
     last_result_seq = 0
     last_error_seq = 0
-    # last_planner_error_seq = 0
+    last_policy_seq = 0
+    last_policy_error_seq = 0
+    policy_updates = 0
+    prev_cfgs: dict[str, NDArray[np.float64]] = {}
 
     logging.info("Polling camera %s and sending latest frames to %s:%s", cfg.cap, cfg.host, cfg.port)
     try:
         while cfg.limit is None or step < cfg.limit:
-            ui.step()
-
             worker.submit(frame.copy())
             result = worker.latest()
 
@@ -233,21 +249,34 @@ def main(cfg: RetargetConfig) -> None:
                 }
                 ui.update_hands(kp3ds)
                 if kp3ds:
-                    # TEMP(debug): onlineplanner disabled.
-                    # planner_worker.submit(kp3ds)
-                    pass
+                    policy_worker.submit(kp3ds)
                 last_result_seq = result.seq
 
-            # TEMP(debug): onlineplanner disabled.
-            # planner_result = planner_worker.latest()
-            # if (
-            #     planner_result is not None
-            #     and planner_result.error is not None
-            #     and planner_result.seq != last_planner_error_seq
-            # ):
-            #     error = planner_result.error
-            #     logging.error("onlineplanner failed", exc_info=(type(error), error, error.__traceback__))
-            #     last_planner_error_seq = planner_result.seq
+            policy_result = policy_worker.latest()
+            if (
+                policy_result is not None
+                and policy_result.error is not None
+                and policy_result.seq != last_policy_error_seq
+            ):
+                error = policy_result.error
+                logging.error("retarget policy failed", exc_info=(type(error), error, error.__traceback__))
+                last_policy_error_seq = policy_result.seq
+            elif policy_result is not None and policy_result.value is not None and policy_result.seq != last_policy_seq:
+                if policy_result.seq == warmup_seq:
+                    policy.reset()
+                    logging.info("planner compiled in %.1fs; retargeting live", time.monotonic() - warmup_start)
+                else:
+                    cfgs = {name: np.asarray(out["q"]) for name, out in policy_result.value.items()}
+                    if policy_updates % 30 == 0:
+                        deltas = {
+                            name: float(np.abs(q - prev_cfgs[name]).max()) if name in prev_cfgs else float("nan")
+                            for name, q in cfgs.items()
+                        }
+                        logging.info("policy update #%d max|dq|: %s", policy_updates, deltas)
+                    prev_cfgs = cfgs
+                    policy_updates += 1
+                    ui.step(cfgs)
+                last_policy_seq = policy_result.seq
 
             ret, frame = cap.read()
             if not ret:
@@ -257,7 +286,7 @@ def main(cfg: RetargetConfig) -> None:
             step += 1
     finally:
         worker.close()
-        # planner_worker.close()
+        policy_worker.close()
         cap.release()
 
 
