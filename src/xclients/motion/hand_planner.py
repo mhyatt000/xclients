@@ -26,6 +26,7 @@ import jaxls
 import numpy as onp
 import pyroki as pk
 
+from xclients.motion.beam import BeamConfig, run_beam
 from xclients.motion.embodiment import arm_home_cfg_and_mask, Embodiment, RUKA_PREFIX
 from xclients.motion.types import KeypointTargets
 from xclients.motion.world import World
@@ -116,16 +117,23 @@ def create_conn_tree(robot: pk.Robot, link_indices: jnp.ndarray) -> jnp.ndarray:
 
 
 class HandPlanner:
-    """Warm-started single-step keypoint retargeting: (21,3) base-frame keypoints -> q."""
+    """Warm-started single-step keypoint retargeting: (21,3) base-frame keypoints -> q.
+
+    Pass ``beam=BeamConfig()`` to solve with IK-Beam (multi-seed staged LM) instead of a
+    single warm-started solve; the retargeting problem is identical either way.
+    """
 
     def __init__(
         self,
         emb: Embodiment,
         weights: RukaWeights = RukaWeights(),
         world: World | None = None,
+        beam: BeamConfig | None = None,
+        seed: int = 0,
     ) -> None:
         self.emb = emb
         self.weights = weights
+        self.beam = beam
         world = World.default() if world is None else world
         self.world_coll = world.in_base_frame(emb.world_T_base)
         self.world_masks = world.link_masks(list(emb.robot.links.names))
@@ -135,9 +143,11 @@ class HandPlanner:
         self.home_cfg = jnp.asarray(home_cfg)
         self.home_weight = jnp.asarray(weights.home * self._home_mask)
         self.prev_cfg = onp.array(emb.rest_cfg)
+        self._key = jax.random.PRNGKey(seed)
+        self._step = 0
 
     def solve(self, targets: KeypointTargets) -> onp.ndarray:
-        cfg = _solve_hand_retarget_jax(
+        args = (
             self.emb.robot,
             self.emb.robot_coll,
             self.world_coll,
@@ -152,6 +162,19 @@ class HandPlanner:
             self.home_weight,
             self.weights,
         )
+        if self.beam is None:
+            cfg = _solve_hand_retarget_jax(*args)
+        else:
+            key = jax.random.fold_in(self._key, self._step)
+            self._step += 1
+            cfg = _solve_hand_retarget_beam_jax(
+                *args,
+                tuple(self.beam.lm),
+                tuple(self.beam.batch),
+                self.beam.seed_noise,
+                self.beam.lambda_initial,
+                key,
+            )
         self.prev_cfg = onp.array(cfg)
         return self.prev_cfg
 
@@ -166,8 +189,7 @@ class HandPlanner:
         self.prev_cfg = onp.array(self.emb.rest_cfg)
 
 
-@jdc.jit
-def _solve_hand_retarget_jax(
+def _build_hand_problem(
     robot: pk.Robot,
     robot_coll: pk.collision.RobotCollision,
     world_coll: tuple[pk.collision.CollGeom, ...],
@@ -180,8 +202,10 @@ def _solve_hand_retarget_jax(
     rest_cfg: jnp.ndarray,
     home_cfg: jnp.ndarray,
     home_weight: jnp.ndarray,
-    weights: jdc.Static[RukaWeights],
-) -> jax.Array:
+    weights: RukaWeights,
+) -> tuple[list[jaxls.Cost], jaxls.Var, jaxls.Var, int]:
+    """Build the keypoint-retargeting costs + variables. Shared by the single-solve and beam
+    solvers. ``prev_cfg`` is the smoothness reference (previous frame), not the seed init."""
     n = link_indices.shape[0]
     off_diag = 1.0 - jnp.eye(n)
 
@@ -252,7 +276,29 @@ def _solve_hand_retarget_jax(
         )
         for geom, mask in zip(world_coll, world_masks)
     )
+    return costs, joint_var, scale_var, n
 
+
+@jdc.jit
+def _solve_hand_retarget_jax(
+    robot: pk.Robot,
+    robot_coll: pk.collision.RobotCollision,
+    world_coll: tuple[pk.collision.CollGeom, ...],
+    world_masks: tuple[jnp.ndarray, ...],
+    target_keypoints: jnp.ndarray,  # (21, 3), robot base frame
+    link_indices: jnp.ndarray,
+    mano_indices: jnp.ndarray,
+    mano_mask: jnp.ndarray,
+    prev_cfg: jnp.ndarray,
+    rest_cfg: jnp.ndarray,
+    home_cfg: jnp.ndarray,
+    home_weight: jnp.ndarray,
+    weights: jdc.Static[RukaWeights],
+) -> jax.Array:
+    costs, joint_var, scale_var, n = _build_hand_problem(
+        robot, robot_coll, world_coll, world_masks, target_keypoints, link_indices,
+        mano_indices, mano_mask, prev_cfg, rest_cfg, home_cfg, home_weight, weights,
+    )
     solution = (
         jaxls.LeastSquaresProblem(costs=costs, variables=[joint_var, scale_var])
         .analyze()
@@ -265,3 +311,50 @@ def _solve_hand_retarget_jax(
         )
     )
     return solution[joint_var]
+
+
+@jdc.jit
+def _solve_hand_retarget_beam_jax(
+    robot: pk.Robot,
+    robot_coll: pk.collision.RobotCollision,
+    world_coll: tuple[pk.collision.CollGeom, ...],
+    world_masks: tuple[jnp.ndarray, ...],
+    target_keypoints: jnp.ndarray,
+    link_indices: jnp.ndarray,
+    mano_indices: jnp.ndarray,
+    mano_mask: jnp.ndarray,
+    prev_cfg: jnp.ndarray,
+    rest_cfg: jnp.ndarray,
+    home_cfg: jnp.ndarray,
+    home_weight: jnp.ndarray,
+    weights: jdc.Static[RukaWeights],
+    lm: jdc.Static[tuple[int, ...]],
+    batch: jdc.Static[tuple[int, ...]],
+    seed_noise: float,
+    lambda_initial: float,
+    key: jax.Array,
+) -> jax.Array:
+    """IK-Beam over the keypoint-retarget problem: seeds are perturbed joint configs."""
+
+    def solve_one(init_cfg: jnp.ndarray, lambd: jnp.ndarray, n_steps: int):
+        costs, joint_var, scale_var, n = _build_hand_problem(
+            robot, robot_coll, world_coll, world_masks, target_keypoints, link_indices,
+            mano_indices, mano_mask, prev_cfg, rest_cfg, home_cfg, home_weight, weights,
+        )
+        solution, summary = (
+            jaxls.LeastSquaresProblem(costs=costs, variables=[joint_var, scale_var])
+            .analyze()
+            .solve(
+                verbose=False,
+                initial_vals=jaxls.VarValues.make(
+                    (joint_var.with_value(init_cfg), scale_var.with_value(jnp.ones((n, n))))
+                ),
+                linear_solver="dense_cholesky",  # vmap-safe (batched Cholesky)
+                termination=jaxls.TerminationConfig(max_iterations=n_steps, early_termination=False),
+                trust_region=jaxls.TrustRegionConfig(lambda_initial=lambd),
+                return_summary=True,
+            )
+        )
+        return solution[joint_var], summary.cost_history[-1], summary.lambda_history[-1]
+
+    return run_beam(prev_cfg, solve_one, lm, batch, seed_noise, lambda_initial, key)

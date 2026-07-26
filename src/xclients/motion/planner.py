@@ -10,13 +10,18 @@ import jaxls
 import numpy as onp
 import pyroki as pk
 
+from xclients.motion.beam import BeamConfig, run_beam
 from xclients.motion.embodiment import arm_home_cfg_and_mask, Embodiment
 from xclients.motion.types import CostWeights, Targets
 from xclients.motion.world import World
 
 
 class OnlinePlanner:
-    """Warm-started receding-horizon IK: targets -> q. Owns the previous-solution state."""
+    """Warm-started receding-horizon IK: targets -> q. Owns the previous-solution state.
+
+    Pass ``beam=BeamConfig()`` to solve with IK-Beam (multi-seed staged LM) instead of a
+    single warm-started solve; the receding-horizon problem is identical either way.
+    """
 
     def __init__(
         self,
@@ -25,11 +30,14 @@ class OnlinePlanner:
         len_traj: int = 5,
         dt: float = 0.1,
         world: World | None = None,
+        beam: BeamConfig | None = None,
+        seed: int = 0,
     ) -> None:
         self.emb = emb
         self.weights = weights
         self.len_traj = len_traj
         self.dt = dt
+        self.beam = beam
         world = World.default() if world is None else world
         self.world_coll = world.in_base_frame(emb.world_T_base)
         self.world_masks = world.link_masks(list(emb.robot.links.names))
@@ -38,6 +46,8 @@ class OnlinePlanner:
         self.home_cfg = jnp.asarray(home_cfg)
         self.home_weight = jnp.asarray(weights.home * self._home_mask)
         self.sol_traj = emb.rest_cfg[None].repeat(len_traj, axis=0)
+        self._key = jax.random.PRNGKey(seed)
+        self._step = 0
 
     def solve(self, targets: Targets) -> onp.ndarray:
         wxyz_xyz = onp.stack(
@@ -47,21 +57,36 @@ class OnlinePlanner:
             ],
             axis=0,
         )
-        sol_traj, _sol_pos, _sol_wxyz = _solve_online_planning_jax(
+        target_poses = jaxlie.SE3(jnp.asarray(wxyz_xyz))
+        prev_sols = jnp.concatenate([self.sol_traj, self.sol_traj[-1:]], axis=0)
+        args = (
             self.emb.robot,
             self.emb.robot_coll,
             self.world_coll,
             self.world_masks,
-            jaxlie.SE3(jnp.asarray(wxyz_xyz)),
+            target_poses,
             self.target_link_indices,
             self.len_traj + 1,  # +1 for the start-anchor knot
             self.dt,
             jnp.asarray(self.sol_traj[0]),
-            jnp.concatenate([self.sol_traj, self.sol_traj[-1:]], axis=0),
+            prev_sols,
             self.home_cfg,
             self.home_weight,
             self.weights,
         )
+        if self.beam is None:
+            sol_traj, _sol_pos, _sol_wxyz = _solve_online_planning_jax(*args)
+        else:
+            key = jax.random.fold_in(self._key, self._step)
+            self._step += 1
+            sol_traj = _solve_online_beam_jax(
+                *args,
+                tuple(self.beam.lm),
+                tuple(self.beam.batch),
+                self.beam.seed_noise,
+                self.beam.lambda_initial,
+                key,
+            )
         self.sol_traj = onp.array(sol_traj[1:])
         return self.sol_traj[0]
 
@@ -77,22 +102,22 @@ class OnlinePlanner:
         self.sol_traj = self.emb.rest_cfg[None].repeat(self.len_traj, axis=0)
 
 
-@jdc.jit
-def _solve_online_planning_jax(
+def _build_online_problem(
     robot: pk.Robot,
     robot_coll: pk.collision.RobotCollision,
     world_coll: Sequence[pk.collision.CollGeom],
     world_masks: Sequence[jnp.ndarray],
     target_poses: jaxlie.SE3,
     target_links: jnp.ndarray,
-    timesteps: jdc.Static[int],
+    timesteps: int,
     dt: float,
     start_cfg: jnp.ndarray,
-    prev_sols: jnp.ndarray,
     home_cfg: jnp.ndarray,
     home_weight: jnp.ndarray,
-    weights: jdc.Static[CostWeights],
-) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    weights: CostWeights,
+) -> tuple[list[jaxls.Cost], jaxls.Var, jaxls.Var]:
+    """Build the receding-horizon costs + variables. Shared by the single-solve and beam
+    solvers so both optimize the identical problem; only the solve schedule differs."""
     num_targets = len(target_links)
 
     def batched_rplus(pose: jaxlie.SE3, delta: jax.Array) -> jaxlie.SE3:
@@ -112,8 +137,6 @@ def _solve_online_planning_jax(
     pose_var = BatchedSE3Var(jnp.arange(0, timesteps))
     pose_var_prev = BatchedSE3Var(jnp.arange(0, timesteps - 1))
     pose_var_next = BatchedSE3Var(jnp.arange(1, timesteps))
-
-    init_pose_vals = jaxlie.SE3(robot.forward_kinematics(prev_sols)[..., target_links, :])
 
     factors: list[jaxls.Cost] = []
 
@@ -217,15 +240,94 @@ def _solve_online_planning_jax(
             for obs, mask in zip(world_coll, world_masks)
         ]
     )
+    return factors, traj_var, pose_var
 
+
+def _online_initial_vals(
+    robot: pk.Robot,
+    traj_var: jaxls.Var,
+    pose_var: jaxls.Var,
+    target_links: jnp.ndarray,
+    traj: jnp.ndarray,
+) -> jaxls.VarValues:
+    """Warm-start values for a joint trajectory; the latent SE3 poses are the FK of it."""
+    init_pose_vals = jaxlie.SE3(robot.forward_kinematics(traj)[..., target_links, :])
+    return jaxls.VarValues.make((traj_var.with_value(traj), pose_var.with_value(init_pose_vals)))
+
+
+@jdc.jit
+def _solve_online_planning_jax(
+    robot: pk.Robot,
+    robot_coll: pk.collision.RobotCollision,
+    world_coll: Sequence[pk.collision.CollGeom],
+    world_masks: Sequence[jnp.ndarray],
+    target_poses: jaxlie.SE3,
+    target_links: jnp.ndarray,
+    timesteps: jdc.Static[int],
+    dt: float,
+    start_cfg: jnp.ndarray,
+    prev_sols: jnp.ndarray,
+    home_cfg: jnp.ndarray,
+    home_weight: jnp.ndarray,
+    weights: jdc.Static[CostWeights],
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    factors, traj_var, pose_var = _build_online_problem(
+        robot, robot_coll, world_coll, world_masks, target_poses, target_links,
+        timesteps, dt, start_cfg, home_cfg, home_weight, weights,
+    )
     solution = (
         jaxls.LeastSquaresProblem(factors, [traj_var, pose_var])
         .analyze()
         .solve(
             verbose=False,
-            initial_vals=jaxls.VarValues.make((traj_var.with_value(prev_sols), pose_var.with_value(init_pose_vals))),
+            initial_vals=_online_initial_vals(robot, traj_var, pose_var, target_links, prev_sols),
             termination=jaxls.TerminationConfig(max_iterations=weights.max_iterations),
         )
     )
     pose_traj = solution[pose_var]
     return solution[traj_var], pose_traj.translation(), pose_traj.rotation().wxyz
+
+
+@jdc.jit
+def _solve_online_beam_jax(
+    robot: pk.Robot,
+    robot_coll: pk.collision.RobotCollision,
+    world_coll: Sequence[pk.collision.CollGeom],
+    world_masks: Sequence[jnp.ndarray],
+    target_poses: jaxlie.SE3,
+    target_links: jnp.ndarray,
+    timesteps: jdc.Static[int],
+    dt: float,
+    start_cfg: jnp.ndarray,
+    prev_sols: jnp.ndarray,
+    home_cfg: jnp.ndarray,
+    home_weight: jnp.ndarray,
+    weights: jdc.Static[CostWeights],
+    lm: jdc.Static[tuple[int, ...]],
+    batch: jdc.Static[tuple[int, ...]],
+    seed_noise: float,
+    lambda_initial: float,
+    key: jax.Array,
+) -> jnp.ndarray:
+    """IK-Beam over the receding-horizon problem: seeds are perturbed joint trajectories."""
+
+    def solve_one(init_traj: jnp.ndarray, lambd: jnp.ndarray, n_steps: int):
+        factors, traj_var, pose_var = _build_online_problem(
+            robot, robot_coll, world_coll, world_masks, target_poses, target_links,
+            timesteps, dt, start_cfg, home_cfg, home_weight, weights,
+        )
+        solution, summary = (
+            jaxls.LeastSquaresProblem(factors, [traj_var, pose_var])
+            .analyze()
+            .solve(
+                verbose=False,
+                initial_vals=_online_initial_vals(robot, traj_var, pose_var, target_links, init_traj),
+                linear_solver="dense_cholesky",  # vmap-safe (batched Cholesky)
+                termination=jaxls.TerminationConfig(max_iterations=n_steps, early_termination=False),
+                trust_region=jaxls.TrustRegionConfig(lambda_initial=lambd),
+                return_summary=True,
+            )
+        )
+        return solution[traj_var], summary.cost_history[-1], summary.lambda_history[-1]
+
+    return run_beam(prev_sols, solve_one, lm, batch, seed_noise, lambda_initial, key)
