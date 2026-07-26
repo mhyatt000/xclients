@@ -10,7 +10,7 @@ import jaxls
 import numpy as onp
 import pyroki as pk
 
-from xclients.motion.embodiment import Embodiment
+from xclients.motion.embodiment import arm_home_cfg_and_mask, Embodiment
 from xclients.motion.types import CostWeights, Targets
 from xclients.motion.world import World
 
@@ -34,6 +34,9 @@ class OnlinePlanner:
         self.world_coll = world.in_base_frame(emb.world_T_base)
         self.world_masks = world.link_masks(list(emb.robot.links.names))
         self.target_link_indices = jnp.array([emb.robot.links.names.index(n) for n in emb.target_links])
+        home_cfg, home_mask = arm_home_cfg_and_mask(emb.robot)
+        self.home_cfg = jnp.asarray(home_cfg)
+        self.home_weight = jnp.asarray(weights.home * home_mask)
         self.sol_traj = emb.rest_cfg[None].repeat(len_traj, axis=0)
 
     def solve(self, targets: Targets) -> onp.ndarray:
@@ -55,6 +58,8 @@ class OnlinePlanner:
             self.dt,
             jnp.asarray(self.sol_traj[0]),
             jnp.concatenate([self.sol_traj, self.sol_traj[-1:]], axis=0),
+            self.home_cfg,
+            self.home_weight,
             self.weights,
         )
         self.sol_traj = onp.array(sol_traj[1:])
@@ -80,6 +85,8 @@ def _solve_online_planning_jax(
     dt: float,
     start_cfg: jnp.ndarray,
     prev_sols: jnp.ndarray,
+    home_cfg: jnp.ndarray,
+    home_weight: jnp.ndarray,
     weights: jdc.Static[CostWeights],
 ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     num_targets = len(target_links)
@@ -162,6 +169,12 @@ def _solve_online_planning_jax(
                 traj_var,
                 jnp.array(traj_var.default_factory())[None],
                 weight=weights.rest,
+            ),
+            # Home bias: arm joints only (per-dof weight is zero elsewhere), toward HOME_DXARM.
+            pk.costs.rest_cost(
+                traj_var,
+                home_cfg[None],
+                weight=home_weight[None],
             ),
             pk.costs.self_collision_cost(
                 jax.tree.map(lambda x: x[None], robot),

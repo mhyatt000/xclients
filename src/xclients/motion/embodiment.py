@@ -20,7 +20,9 @@ RUKA_URDF = {
 }
 GENERATED_DIR = REPO_ROOT / "urdf" / "generated"
 
-XARM_ARM_WARMSTART_DEG = np.array([0.0, -45.0, 0.0, 35.0, 0.0, 65.0, 90.0])
+# HOME_DXARM for dxarm: q = np.zeros(7), q[1] = -30 deg. The rest posture inits here and
+# the home-bias cost pulls the arm joints back here.
+HOME_DXARM = np.deg2rad([0.0, -30.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 XARM_ARM_JOINTS = tuple(f"joint{i}" for i in range(1, 8))
 XARM_GRIPPER_CUT_JOINT = "gripper_fix"  # link_eef -> xarm_gripper_base_link
 XARM_FLANGE_LINK = "link_eef"
@@ -79,12 +81,23 @@ def load_urdf(path: Path) -> yourdfpy.URDF:
 
 
 def arm_warmstart_rest_cfg(robot: pk.Robot) -> NDArray[np.float64]:
-    """Default config with the arm joints (by name) set to the warm-start posture."""
+    """Default config with the arm joints (by name) set to HOME_DXARM."""
     rest_cfg = np.array(robot.joint_var_cls.default_factory())
     actuated = list(robot.joints.actuated_names)
-    for name, angle_deg in zip(XARM_ARM_JOINTS, XARM_ARM_WARMSTART_DEG):
-        rest_cfg[actuated.index(name)] = np.deg2rad(angle_deg)
+    for name, angle in zip(XARM_ARM_JOINTS, HOME_DXARM):
+        rest_cfg[actuated.index(name)] = angle
     return rest_cfg
+
+
+def arm_home_cfg_and_mask(robot: pk.Robot) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Full-dof HOME_DXARM vector and the 0/1 mask selecting the arm joints (by name)."""
+    actuated = list(robot.joints.actuated_names)
+    cfg = np.zeros(len(actuated))
+    mask = np.zeros(len(actuated))
+    for name, angle in zip(XARM_ARM_JOINTS, HOME_DXARM):
+        cfg[actuated.index(name)] = angle
+        mask[actuated.index(name)] = 1.0
+    return cfg, mask
 
 
 def xarm_gripper(

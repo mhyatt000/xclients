@@ -26,7 +26,7 @@ import jaxls
 import numpy as onp
 import pyroki as pk
 
-from xclients.motion.embodiment import Embodiment, RUKA_PREFIX
+from xclients.motion.embodiment import arm_home_cfg_and_mask, Embodiment, RUKA_PREFIX
 from xclients.motion.types import KeypointTargets
 from xclients.motion.world import World
 
@@ -64,6 +64,7 @@ class RukaWeights:
     global_alignment: float = 13.0
     joint_smoothness: float = 2.0
     rest: float = 0.05
+    home: float = 0.1  # small MSE bias of the arm joints toward HOME_DXARM
     limit: float = 100.0
     self_collision: float = 5.0
     self_collision_margin: float = 0.02
@@ -129,6 +130,9 @@ class HandPlanner:
         self.world_masks = world.link_masks(list(emb.robot.links.names))
         self.link_indices, self.mano_indices = mano_ruka_mapping(emb.robot)
         self.mano_mask = create_conn_tree(emb.robot, self.link_indices)
+        home_cfg, home_mask = arm_home_cfg_and_mask(emb.robot)
+        self.home_cfg = jnp.asarray(home_cfg)
+        self.home_weight = jnp.asarray(weights.home * home_mask)
         self.prev_cfg = onp.array(emb.rest_cfg)
 
     def solve(self, targets: KeypointTargets) -> onp.ndarray:
@@ -143,6 +147,8 @@ class HandPlanner:
             self.mano_mask,
             jnp.asarray(self.prev_cfg),
             jnp.asarray(self.emb.rest_cfg),
+            self.home_cfg,
+            self.home_weight,
             self.weights,
         )
         self.prev_cfg = onp.array(cfg)
@@ -167,6 +173,8 @@ def _solve_hand_retarget_jax(
     mano_mask: jnp.ndarray,
     prev_cfg: jnp.ndarray,
     rest_cfg: jnp.ndarray,
+    home_cfg: jnp.ndarray,
+    home_weight: jnp.ndarray,
     weights: jdc.Static[RukaWeights],
 ) -> jax.Array:
     n = link_indices.shape[0]
@@ -217,6 +225,8 @@ def _solve_hand_retarget_jax(
         global_alignment_cost(joint_var),
         prev_smoothness_cost(joint_var),
         pk.costs.rest_cost(joint_var, rest_pose=rest_cfg, weight=weights.rest),
+        # Home bias: arm joints only (per-dof weight is zero elsewhere), toward HOME_DXARM.
+        pk.costs.rest_cost(joint_var, rest_pose=home_cfg, weight=home_weight),
         pk.costs.limit_cost(robot, joint_var, weight=weights.limit),
         pk.costs.self_collision_cost(
             robot,
