@@ -11,9 +11,7 @@ import tyro
 from webpolicy.client import Client
 
 from xclients.core.cfg import Config
-
-# TEMP(debug): re-enable together with the WiLoR/planner blocks in main().
-# from xclients.core.latest_worker import LatestWorker
+from xclients.core.latest_worker import LatestWorker
 from xclients.core.tf import FLU2RDF
 from xclients.triangulate import lift_hand_pnp
 from xclients.viser_webui import ViserWebUI
@@ -33,9 +31,9 @@ DEFAULT_WORLD_FROM_CAM_FLU = np.array(
 
 @dataclass
 class RetargetConfig(Config):
-    # TEMP(debug): defaults added while WiLoR + onlineplanner are disabled below;
+    # TEMP(debug): defaults added while onlineplanner is disabled below;
     # revert to required fields when re-enabling.
-    port: int = 8000
+    port: int = 8084
     host: str = "localhost"
     onlineplanner_host: str = "localhost"
     onlineplanner_port: int = 8085
@@ -45,6 +43,8 @@ class RetargetConfig(Config):
     fy: float = 515.0
     limit: int | None = None
     ema_n: int = 4  # EMA smoothing horizon for PnP-refined kp3d; 1 disables smoothing
+    offset_x: float = 0.0  # world-frame offset added to kp3d to shift hands into the robot workspace
+    offset_z: float = 0.0
 
     def __post_init__(self) -> None:
         self.extr = Path(self.extr).expanduser().resolve() if self.extr else None
@@ -99,25 +99,60 @@ def ema_alpha(n: int) -> float:
 class HandSmoother:
     def __init__(self, n: int) -> None:
         self._alpha = ema_alpha(n)
-        self._points: NDArray[np.float64] | None = None
+        self._points: dict[str, NDArray[np.float64]] = {}
 
-    def smooth(self, points: NDArray[np.float64]) -> NDArray[np.float64]:
-        if self._alpha >= 1.0 or self._points is None:
+    def smooth(self, slot: str, points: NDArray[np.float64]) -> NDArray[np.float64]:
+        if self._alpha >= 1.0 or slot not in self._points:
             smoothed = points.copy()
         else:
-            smoothed = self._alpha * points + (1.0 - self._alpha) * self._points
-        self._points = smoothed
+            smoothed = self._alpha * points + (1.0 - self._alpha) * self._points[slot]
+        self._points[slot] = smoothed
         return smoothed
 
 
-def lift_first_hand(
+class HandTracker:
+    """Assigns detections to 'left'/'right' slots by handedness + wrist continuity."""
+
+    def __init__(self, handedness_penalty: float = 0.3, gate: float = 0.5, max_misses: int = 10) -> None:
+        self._penalty = handedness_penalty
+        self._gate = gate
+        self._max_misses = max_misses
+        self._wrists: dict[str, NDArray[np.float64]] = {}
+        self._misses: dict[str, int] = {"left": 0, "right": 0}
+
+    def assign(self, wrists: list[NDArray[np.float64]], is_rights: list[bool]) -> dict[str, int]:
+        costs = []
+        for slot in ("left", "right"):
+            for j, (wrist, is_right) in enumerate(zip(wrists, is_rights)):
+                cost = np.linalg.norm(wrist - self._wrists[slot]) if slot in self._wrists else 0.0
+                cost += self._penalty * ((slot == "right") != is_right)
+                costs.append((float(cost), slot, j))
+        assigned: dict[str, int] = {}
+        used: set[int] = set()
+        for cost, slot, j in sorted(costs):
+            if cost > self._gate or slot in assigned or j in used:
+                continue
+            assigned[slot] = j
+            used.add(j)
+        for slot in ("left", "right"):
+            if slot in assigned:
+                self._wrists[slot] = wrists[assigned[slot]]
+                self._misses[slot] = 0
+            else:
+                self._misses[slot] += 1
+                if self._misses[slot] >= self._max_misses:
+                    self._wrists.pop(slot, None)  # forget stale position so the hand can re-enter anywhere
+        return assigned
+
+
+def lift_hands(
     cfg: RetargetConfig,
     frame: NDArray[np.uint8],
     hands: list[dict],
-    world_from_cam_flu: NDArray[np.float64],
-    smoother: HandSmoother,
-) -> NDArray[np.float32] | None:
+) -> list[tuple[bool, NDArray[np.float64]]]:
+    """PnP-lift each detection to camera frame; returns (is_right, kp3d_cam) per liftable hand."""
     k = camera_intrinsics(cfg, frame)
+    lifted = []
     for i, hand in enumerate(hands):
         kp2d = np.asarray(hand["keypoints_2d"], dtype=np.float32)
         kp3d_rel = np.asarray(hand["keypoints_3d"], dtype=np.float64)
@@ -129,9 +164,8 @@ def lift_first_hand(
         if tvec[2] <= 0.0:
             logging.warning("Skipping hand %d: PnP placed it behind the camera with z=%.3f", i, tvec[2])
             continue
-        kp3d_cam = smoother.smooth(kp3d_cam)
-        return opencv_camera_points_to_world(world_from_cam_flu, kp3d_cam)
-    return None
+        lifted.append((bool(hand["is_right"]), kp3d_cam))
+    return lifted
 
 
 def run_wilor(client: Client, frame: NDArray[np.uint8]) -> tuple[NDArray[np.uint8], dict]:
@@ -162,39 +196,48 @@ def main(cfg: RetargetConfig) -> None:
         image=frame[..., ::-1],
     )
 
-    # TEMP(debug): WiLoR + onlineplanner disabled; the loop below only reads the
-    # camera and steps the viser scene. Uncomment the marked blocks to restore.
-    # client = Client(cfg.host, cfg.port)
-    # worker = LatestWorker(lambda image: run_wilor(client, image), name="wilor-worker")
+    client = Client(cfg.host, cfg.port)
+    worker = LatestWorker(lambda image: run_wilor(client, image), name="wilor-worker")
+    # TEMP(debug): onlineplanner disabled; WiLoR kp3d is plotted in the viser scene instead.
     # planner_client = Client(cfg.onlineplanner_host, cfg.onlineplanner_port)
     # planner_worker = LatestWorker(lambda kp3d: run_onlineplanner(planner_client, kp3d), name="onlineplanner-worker")
-    # smoother = HandSmoother(cfg.ema_n)
+    smoother = HandSmoother(cfg.ema_n)
+    tracker = HandTracker()
+    kp3d_offset = np.array([cfg.offset_x, 0.0, cfg.offset_z], dtype=np.float32)
     step = 0
-    # last_result_seq = 0
-    # last_error_seq = 0
+    last_result_seq = 0
+    last_error_seq = 0
     # last_planner_error_seq = 0
 
-    logging.info("Polling camera %s and stepping viser scene (WiLoR/planner disabled)", cfg.cap)
+    logging.info("Polling camera %s and sending latest frames to %s:%s", cfg.cap, cfg.host, cfg.port)
     try:
         while cfg.limit is None or step < cfg.limit:
             ui.step()
 
-            # TEMP(debug): WiLoR inference disabled.
-            # worker.submit(frame.copy())
-            # result = worker.latest()
-            #
-            # if result is not None and result.error is not None and result.seq != last_error_seq:
-            #     error = result.error
-            #     logging.error("WiLoR inference failed", exc_info=(type(error), error, error.__traceback__))
-            #     last_error_seq = result.seq
-            # elif result is not None and result.value is not None and result.seq != last_result_seq:
-            #     result_frame, out = result.value
-            #     hands = out.get("hands") or []
-            #     kp3d = lift_first_hand(cfg, result_frame, hands, world_from_cam_flu, smoother)
-            #     if kp3d is not None:
-            #         planner_worker.submit(kp3d)
-            #     last_result_seq = result.seq
-            #
+            worker.submit(frame.copy())
+            result = worker.latest()
+
+            if result is not None and result.error is not None and result.seq != last_error_seq:
+                error = result.error
+                logging.error("WiLoR inference failed", exc_info=(type(error), error, error.__traceback__))
+                last_error_seq = result.seq
+            elif result is not None and result.value is not None and result.seq != last_result_seq:
+                result_frame, out = result.value
+                hands = out.get("hands") or []
+                lifted = lift_hands(cfg, result_frame, hands)
+                assigned = tracker.assign([kp3d_cam[0] for _, kp3d_cam in lifted], [r for r, _ in lifted])
+                kp3ds = {
+                    slot: opencv_camera_points_to_world(world_from_cam_flu, smoother.smooth(slot, lifted[j][1]))
+                    + kp3d_offset
+                    for slot, j in assigned.items()
+                }
+                ui.update_hands(kp3ds)
+                if kp3ds:
+                    # TEMP(debug): onlineplanner disabled.
+                    # planner_worker.submit(kp3ds)
+                    pass
+                last_result_seq = result.seq
+
             # TEMP(debug): onlineplanner disabled.
             # planner_result = planner_worker.latest()
             # if (
@@ -213,7 +256,7 @@ def main(cfg: RetargetConfig) -> None:
             ui.update_camera_image("cam", frame[..., ::-1])
             step += 1
     finally:
-        # worker.close()
+        worker.close()
         # planner_worker.close()
         cap.release()
 
