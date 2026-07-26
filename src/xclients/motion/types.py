@@ -20,6 +20,14 @@ class Targets:
     aperture: float | None = None
 
 
+@dataclass
+class KeypointTargets:
+    """Retargeter output for keypoint-space solves: full MANO cloud in the robot base frame."""
+
+    kp3d: NDArray[np.float64]  # (21, 3)
+    aperture: float | None = None
+
+
 @dataclass(frozen=True)
 class CostWeights:
     """Solver cost weights — the knobs to tune. Frozen/hashable so each instance maps to one jit cache entry."""

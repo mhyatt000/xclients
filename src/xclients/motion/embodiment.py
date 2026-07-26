@@ -30,8 +30,13 @@ RUKA_TIP_LINKS = tuple(
     RUKA_PREFIX + name
     for name in ("thumb_actual_tip", "index_actual_tip", "middle_actual_tip", "ring_actual_tip", "pinky_actual_tip")
 )
-# TODO(calibration): measured flange -> ruka base_new transform; identity until then.
+# Measured flange -> ruka mount offset, from 06-10_xarm_ruka_bimanual_teleop.py's
+# HAND_MOUNT_XYZ (the ruka base sits ~3.8 cm off the eef center, not on it).
 T_FLANGE_RUKA = np.eye(4)
+T_FLANGE_RUKA[:3, 3] = (0.00216402, 0.0382359, 0.00282698)
+
+RUKA_ROOT_LINK = RUKA_PREFIX + "base_new"  # carries the coarse whole-hand collision proxy
+COARSE_HAND_PAD = 0.01  # padding added to the fitted hand bounding sphere
 
 # Shared base placements for the dual-arm setup (also used by the client-side viser scene).
 # l/r follow the operator's perspective facing the rig: dxarm-l is the arm on your left (+Y).
@@ -106,15 +111,63 @@ def xarm_gripper(
     )
 
 
+def hand_bounding_sphere(urdf: yourdfpy.URDF, robot: pk.Robot) -> tuple[NDArray[np.float64], float]:
+    """(center in RUKA_ROOT_LINK frame, radius) covering all hand collision meshes at zero config."""
+    wxyz_xyz = np.array(robot.forward_kinematics(cfg=np.array(robot.joint_var_cls.default_factory())))
+    names = robot.links.names
+
+    def T_base_link(link: str) -> NDArray[np.float64]:
+        T = np.eye(4)
+        T[:3, :3] = R.from_quat(wxyz_xyz[names.index(link), :4], scalar_first=True).as_matrix()
+        T[:3, 3] = wxyz_xyz[names.index(link), 4:]
+        return T
+
+    T_root_inv = np.linalg.inv(T_base_link(RUKA_ROOT_LINK))
+    points = []
+    for link in names:
+        if not link.startswith(RUKA_PREFIX):
+            continue
+        mesh = RobotCollision._get_trimesh_collision_geometries(urdf, link)  # noqa: SLF001
+        if mesh.vertices.shape[0] == 0:
+            continue
+        T = T_root_inv @ T_base_link(link)
+        points.append(mesh.vertices @ T[:3, :3].T + T[:3, 3])
+    if not points:
+        raise ValueError("No hand collision meshes found to bound")
+    pts = np.concatenate(points, axis=0)
+    center = (pts.min(axis=0) + pts.max(axis=0)) / 2.0
+    radius = float(np.linalg.norm(pts - center, axis=1).max()) + COARSE_HAND_PAD
+    return center, radius
+
+
+def coarse_hand_ignore_pairs(link_names: list[str]) -> tuple[tuple[str, str], ...]:
+    """Self-collision pairs to drop: hand-vs-hand, and fine-hand-vs-arm.
+
+    The whole hand stays arm-aware through RUKA_ROOT_LINK, whose collision
+    capsule is inflated to bound the hand (see add_collision_sphere), and every
+    fine hand link keeps its individual world (floor) collision for free.
+    """
+    hand = [n for n in link_names if n.startswith(RUKA_PREFIX)]
+    arm = [n for n in link_names if not n.startswith(RUKA_PREFIX)]
+    pairs = [(a, b) for i, a in enumerate(hand) for b in hand[i + 1 :]]
+    pairs += [(h, a) for h in hand if h != RUKA_ROOT_LINK for a in arm]
+    return tuple(pairs)
+
+
 def xarm_ruka(
     side: str,
     world_T_base: NDArray[np.floating],
     arm_urdf_path: Path = XARM_GRIPPER_URDF,
+    coarse_hand_coll: bool = True,
 ) -> Embodiment:
     """xArm7 with the gripper pruned and the ruka hand grafted onto the flange.
 
     Composed in memory from the unmodified source URDFs; the merged model is
     written to urdf/generated/ so the client-side viser scene can load it too.
+
+    With coarse_hand_coll, hand-internal self-collision pairs are dropped and
+    hand-vs-arm is checked against a single fitted whole-hand bounding sphere
+    instead of 17 per-link capsules (~630 -> ~190 active pairs).
     """
     model = uc.load_model(arm_urdf_path)
     uc.prune_subtree(model, XARM_GRIPPER_CUT_JOINT)
@@ -123,17 +176,35 @@ def xarm_ruka(
     generated_path = uc.save(model, GENERATED_DIR / f"xarm7_ruka_{side}.urdf")
 
     urdf = uc.load_urdf(generated_path)
-    rest_cfg = arm_warmstart_rest_cfg(pk.Robot.from_urdf(urdf))
+    probe = pk.Robot.from_urdf(urdf)
+    rest_cfg = arm_warmstart_rest_cfg(probe)
+    # Ruka joints rest at zero (clipped into limits): zero is less curled than
+    # the limit midpoint, which is pyroki's own default (per 09-5_ruka.py).
+    lower = np.asarray(probe.joints.lower_limits)
+    upper = np.asarray(probe.joints.upper_limits)
+    for i, joint in enumerate(probe.joints.actuated_names):
+        if joint.startswith(RUKA_PREFIX):
+            rest_cfg[i] = np.clip(0.0, lower[i], upper[i])
     robot = pk.Robot.from_urdf(urdf, default_joint_cfg=rest_cfg)
 
     missing = [name for name in RUKA_TIP_LINKS if name not in robot.links.names]
     if missing:
         raise ValueError(f"ruka fingertip link(s) missing from {generated_path}: {missing}")
 
+    if coarse_hand_coll:
+        center, radius = hand_bounding_sphere(urdf, robot)
+        uc.add_collision_sphere(model, RUKA_ROOT_LINK, center, radius, name="hand_coll_proxy")
+        generated_path = uc.save(model, GENERATED_DIR / f"xarm7_ruka_{side}_coarse.urdf")
+        urdf = uc.load_urdf(generated_path)
+        robot = pk.Robot.from_urdf(urdf, default_joint_cfg=rest_cfg)
+        robot_coll = RobotCollision.from_urdf(urdf, user_ignore_pairs=coarse_hand_ignore_pairs(list(robot.links.names)))
+    else:
+        robot_coll = RobotCollision.from_urdf(urdf)
+
     return Embodiment(
         urdf=urdf,
         robot=robot,
-        robot_coll=RobotCollision.from_urdf(urdf),
+        robot_coll=robot_coll,
         target_links=list(RUKA_TIP_LINKS),
         rest_cfg=rest_cfg,
         world_T_base=np.asarray(world_T_base, dtype=np.float64),
@@ -141,17 +212,17 @@ def xarm_ruka(
     )
 
 
-def dxarm_left(ee: str = "gripper") -> Embodiment:
-    return _dxarm("left", pose_to_matrix(DXARM_L_POSITION, DXARM_L_WXYZ), ee)
+def dxarm_left(ee: str = "gripper", coarse_hand_coll: bool = True) -> Embodiment:
+    return _dxarm("left", pose_to_matrix(DXARM_L_POSITION, DXARM_L_WXYZ), ee, coarse_hand_coll)
 
 
-def dxarm_right(ee: str = "gripper") -> Embodiment:
-    return _dxarm("right", pose_to_matrix(DXARM_R_POSITION, DXARM_R_WXYZ), ee)
+def dxarm_right(ee: str = "gripper", coarse_hand_coll: bool = True) -> Embodiment:
+    return _dxarm("right", pose_to_matrix(DXARM_R_POSITION, DXARM_R_WXYZ), ee, coarse_hand_coll)
 
 
-def _dxarm(side: str, world_T_base: NDArray[np.float64], ee: str) -> Embodiment:
+def _dxarm(side: str, world_T_base: NDArray[np.float64], ee: str, coarse_hand_coll: bool) -> Embodiment:
     if ee == "gripper":
         return xarm_gripper(world_T_base)
     if ee == "ruka":
-        return xarm_ruka(side, world_T_base)
+        return xarm_ruka(side, world_T_base, coarse_hand_coll=coarse_hand_coll)
     raise ValueError(f"Unknown end effector {ee!r}; expected 'gripper' or 'ruka'")

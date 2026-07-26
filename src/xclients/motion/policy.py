@@ -1,16 +1,17 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 from webpolicy.base_policy import BasePolicy
 
-from xclients.target.embodiment import dxarm_left, dxarm_right, Embodiment
-from xclients.target.planner import OnlinePlanner
-from xclients.target.retargeter import GripperRetargeter, Retargeter, RukaRetargeter
-from xclients.target.types import CostWeights
+from xclients.motion.embodiment import dxarm_left, dxarm_right, Embodiment
+from xclients.motion.hand_planner import HandPlanner, RukaWeights
+from xclients.motion.planner import OnlinePlanner
+from xclients.motion.retargeter import GripperRetargeter, Retargeter, RukaRetargeter
+from xclients.motion.types import CostWeights
 from xclients.viser_webui import UrdfAsset
 
 EndEffector = Literal["gripper", "ruka"]
@@ -22,7 +23,7 @@ class Unit:
 
     hands: tuple[str, ...]  # obs slots this unit consumes, e.g. ("left",) or ("left", "right")
     retargeter: Retargeter
-    planner: OnlinePlanner
+    planner: OnlinePlanner | HandPlanner
 
 
 class RetargetPolicy(BasePolicy):
@@ -55,13 +56,10 @@ class RetargetPolicy(BasePolicy):
 
 def _make_unit(slot: str, emb: Embodiment, ee: EndEffector, weights: CostWeights, len_traj: int, dt: float) -> Unit:
     if ee == "ruka":
-        # Fingertip targets are positions only; the frozen rest orientations in
-        # RukaRetargeter must not constrain the solve.
-        retargeter: Retargeter = RukaRetargeter(emb)
-        weights = replace(weights, pose_match_orientation=0.0)
-    else:
-        retargeter = GripperRetargeter(emb)
-    return Unit((slot,), retargeter, OnlinePlanner(emb, weights, len_traj, dt))
+        # Keypoint-space retargeting: 21-point local/global alignment with a
+        # solved scale (HandPlanner), not SE3 link targets.
+        return Unit((slot,), RukaRetargeter(emb), HandPlanner(emb, RukaWeights()))
+    return Unit((slot,), GripperRetargeter(emb), OnlinePlanner(emb, weights, len_traj, dt))
 
 
 def default_units(
@@ -70,11 +68,12 @@ def default_units(
     dt: float = 0.1,
     left_ee: EndEffector = "gripper",
     right_ee: EndEffector = "gripper",
+    coarse_hand_coll: bool = True,
 ) -> dict[str, Unit]:
     """Bimanual default: left hand drives dxarm-l, right hand drives dxarm-r."""
     return {
-        "dxarm-l": _make_unit("left", dxarm_left(left_ee), left_ee, weights, len_traj, dt),
-        "dxarm-r": _make_unit("right", dxarm_right(right_ee), right_ee, weights, len_traj, dt),
+        "dxarm-l": _make_unit("left", dxarm_left(left_ee, coarse_hand_coll), left_ee, weights, len_traj, dt),
+        "dxarm-r": _make_unit("right", dxarm_right(right_ee, coarse_hand_coll), right_ee, weights, len_traj, dt),
     }
 
 

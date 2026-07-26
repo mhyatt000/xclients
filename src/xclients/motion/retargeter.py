@@ -7,8 +7,8 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.spatial.transform import Rotation as R
 
-from xclients.target.embodiment import Embodiment
-from xclients.target.types import Pose, Targets, validate_kp3d
+from xclients.motion.embodiment import Embodiment
+from xclients.motion.types import KeypointTargets, Pose, Targets, validate_kp3d
 
 PALM_KEYPOINT = 0
 THUMB_TIP_KEYPOINT = 4
@@ -16,9 +16,9 @@ INDEX_TIP_KEYPOINT = 8
 
 
 class Retargeter(Protocol):
-    """Hand keypoints (world frame) -> link targets (robot base frame). Pure and stateless."""
+    """Hand keypoints (world frame) -> solver targets (robot base frame). Pure and stateless."""
 
-    def __call__(self, *kp3d: NDArray[np.floating]) -> Targets: ...
+    def __call__(self, *kp3d: NDArray[np.floating]) -> Targets | KeypointTargets: ...
 
 
 def normalize(vec: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -99,42 +99,20 @@ class GripperRetargeter:
         return Targets(poses={self.target_link: Pose(tcp_target, target_wxyz)}, aperture=aperture)
 
 
-WRIST_KEYPOINT = 0
-# MANO/MediaPipe fingertips, ordered to match Embodiment.target_links for the
-# ruka rig: thumb, index, middle, ring, pinky (same pairing as dex_retarget.yml).
-FINGERTIP_KEYPOINTS = (4, 8, 12, 16, 20)
-
-
 class RukaRetargeter:
-    """MANO fingertips -> per-fingertip position targets on the ruka hand.
+    """MANO keypoints (world frame) -> full keypoint cloud in the robot base frame.
 
-    Target orientations are frozen at the rest-FK tip orientations — they only
-    exist because the planner matches full SE3 poses. Pair with
-    CostWeights(pose_match_orientation=0) so positions alone constrain the solve.
-    `scale` shrinks/grows the hand about the wrist to bridge the human-vs-ruka
-    size mismatch (1.0 until tuned).
+    Pure frame transform: the actual retargeting (21-point local/global
+    alignment with a solved human->robot scale) lives in HandPlanner's cost
+    structure, so no per-finger scaling or target construction happens here.
     """
 
-    def __init__(self, emb: Embodiment, scale: float = 1.0) -> None:
-        if len(emb.target_links) != len(FINGERTIP_KEYPOINTS):
-            raise ValueError(f"Expected {len(FINGERTIP_KEYPOINTS)} fingertip links, got {emb.target_links}")
-        self.target_links = list(emb.target_links)
+    def __init__(self, emb: Embodiment) -> None:
         self.base_T_world = np.linalg.inv(emb.world_T_base)
-        self.scale = float(scale)
-        wxyz_xyz = np.array(emb.robot.forward_kinematics(cfg=emb.rest_cfg))
-        names = emb.robot.links.names
-        self.rest_wxyz = {name: wxyz_xyz[names.index(name), :4].copy() for name in self.target_links}
 
-    def __call__(self, *kp3d: NDArray[np.floating]) -> Targets:
+    def __call__(self, *kp3d: NDArray[np.floating]) -> KeypointTargets:
         (kp3d_world,) = kp3d
         kp3d_world = validate_kp3d(kp3d_world)
         kp = kp3d_world @ self.base_T_world[:3, :3].T + self.base_T_world[:3, 3]
-
-        wrist = kp[WRIST_KEYPOINT]
-        tips = wrist + self.scale * (kp[list(FINGERTIP_KEYPOINTS)] - wrist)
-        poses = {
-            link: Pose(tips[i].astype(np.float64), self.rest_wxyz[link])
-            for i, link in enumerate(self.target_links)
-        }
         aperture = float(np.linalg.norm(kp[INDEX_TIP_KEYPOINT] - kp[THUMB_TIP_KEYPOINT]))
-        return Targets(poses=poses, aperture=aperture)
+        return KeypointTargets(kp3d=kp, aperture=aperture)

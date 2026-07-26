@@ -20,7 +20,7 @@ from webpolicy.client import Client
 from xclients.core.cfg import Config
 from xclients.core.latest_worker import LatestWorker
 from xclients.core.tf import FLU2RDF
-from xclients.target import default_units, EndEffector, RetargetPolicy, unit_assets
+from xclients.motion import default_units, EndEffector, RetargetPolicy, unit_assets
 from xclients.triangulate import lift_hand_pnp
 from xclients.viser_webui import ViserWebUI
 from xclients.xarm_driver import XArmDriver, XArmDriverConfig

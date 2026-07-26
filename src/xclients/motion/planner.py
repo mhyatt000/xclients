@@ -10,9 +10,9 @@ import jaxls
 import numpy as onp
 import pyroki as pk
 
-from xclients.target.embodiment import Embodiment
-from xclients.target.types import CostWeights, Targets
-from xclients.target.world import World
+from xclients.motion.embodiment import Embodiment
+from xclients.motion.types import CostWeights, Targets
+from xclients.motion.world import World
 
 
 class OnlinePlanner:
