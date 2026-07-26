@@ -20,6 +20,16 @@ from xclients.viser_webui import ViserWebUI
 
 logging.basicConfig(level=logging.INFO)
 
+# Default camera extrinsics (camera FLU -> world): eye at (0, 0, 0.36) looking down world -X, level.
+DEFAULT_WORLD_FROM_CAM_FLU = np.array(
+    [
+        [-1.0, 0.0, 0.0, 0.0],
+        [0.0, -1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.36],
+        [0.0, 0.0, 0.0, 1.0],
+    ]
+)
+
 
 @dataclass
 class RetargetConfig(Config):
@@ -133,7 +143,7 @@ def run_onlineplanner(client: Client, kp3d: NDArray[np.float32]) -> dict:
 
 
 def main(cfg: RetargetConfig) -> None:
-    world_from_cam_flu = load_world_from_camera_flu(cfg.extr) if cfg.extr else np.eye(4)
+    world_from_cam_flu = load_world_from_camera_flu(cfg.extr) if cfg.extr else DEFAULT_WORLD_FROM_CAM_FLU
     cap = cv2.VideoCapture(str(cfg.cap) if isinstance(cfg.cap, Path) else cfg.cap)
     if not cap.isOpened():
         raise RuntimeError(f"Failed to open camera {cfg.cap}")
@@ -143,6 +153,14 @@ def main(cfg: RetargetConfig) -> None:
         raise RuntimeError(f"Failed to read first frame from camera {cfg.cap}")
 
     ui = ViserWebUI()
+    h, w = frame.shape[:2]
+    ui.add_camera(
+        "cam",
+        world_from_cam_flu,
+        fov=2.0 * np.arctan2(h / 2.0, cfg.fy),
+        aspect=w / h,
+        image=frame[..., ::-1],
+    )
 
     # TEMP(debug): WiLoR + onlineplanner disabled; the loop below only reads the
     # camera and steps the viser scene. Uncomment the marked blocks to restore.
@@ -192,6 +210,7 @@ def main(cfg: RetargetConfig) -> None:
             if not ret:
                 logging.error("Failed to read frame from camera %s", cfg.cap)
                 continue
+            ui.update_camera_image("cam", frame[..., ::-1])
             step += 1
     finally:
         # worker.close()
