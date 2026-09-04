@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import logging
 import os
 from pathlib import Path
+import pickle
 import time
 
 # Share the GPU with the WiLoR/SAM3 servers instead of preallocating 75% of it.
@@ -16,13 +17,15 @@ import numpy as np
 from numpy.typing import NDArray
 import tyro
 from webpolicy.client import Client
+import zmq
 
 from xclients.core.cfg import Config
 from xclients.core.latest_worker import LatestWorker
 from xclients.core.tf import FLU2RDF
 from xclients.hw.footpedal import FootPedal, FootPedalConfig
 from xclients.hw.xarm_driver import XArmDriver, XArmDriverConfig
-from xclients.motion import default_units, EndEffector, RetargetPolicy, unit_assets
+from xclients.motion import default_units, EndEffector, RetargetPolicy, Unit, unit_assets
+from xclients.motion.beam import BeamConfig
 from xclients.motion.embodiment import HOME_DXARM
 from xclients.triangulate import lift_hand_pnp
 from xclients.viser_webui import ViserWebUI
@@ -38,6 +41,45 @@ DEFAULT_WORLD_FROM_CAM_FLU = np.array(
         [0.0, 0.0, 0.0, 1.0],
     ]
 )
+
+# Actuated-joint order of the standalone RUKA URDF (urdf/ruka/robot.urdf) — the vector
+# layout the RUKA hand driver's ZMQ subscriber feeds straight into joints_to_motor_pos.
+RUKA_JOINT_ORDER = [
+    "index_dip", "index_pip", "index_mcp", "index_splay",
+    "mid_dip", "mid_pip", "mid_mcp",
+    "ring_dip", "ring_pip", "ring_mcp", "ring_splay",
+    "pinky_dip", "pinky_pip", "pinky_mcp", "pinky_splay",
+    "thumb_ip", "thumb_mcp", "thumb_cmc",
+    "wrist_yaw", "base_pitch", "base_yaw",
+]
+
+
+class RukaJointPublisher:
+    """PUB socket speaking the RUKA teleop framing: b"<topic> " + pickle(array)."""
+
+    def __init__(self, port: int) -> None:
+        self._context = zmq.Context()
+        self._socket = self._context.socket(zmq.PUB)
+        self._socket.bind(f"tcp://0.0.0.0:{port}")
+
+    def pub(self, topic: str, array: NDArray[np.floating]) -> None:
+        self._socket.send(topic.encode() + b" " + pickle.dumps(array, protocol=-1))
+
+    def close(self) -> None:
+        self._socket.close()
+        self._context.term()
+
+
+def ruka_pub_topics(units: dict[str, Unit]) -> dict[str, tuple[str, NDArray[np.intp]]]:
+    """Per ruka unit: (topic, indices picking RUKA_JOINT_ORDER out of the composed q)."""
+    topics = {}
+    for name, unit in units.items():
+        actuated = list(unit.planner.emb.robot.joints.actuated_names)
+        if f"ruka_{RUKA_JOINT_ORDER[0]}" not in actuated:
+            continue
+        idx = np.array([actuated.index(f"ruka_{joint}") for joint in RUKA_JOINT_ORDER])
+        topics[name] = (f"ruka_{unit.hands[0][0]}_joints", idx)
+    return topics
 
 
 @dataclass
@@ -59,10 +101,15 @@ class RetargetConfig(Config):
     left_ip: str | None = None  # dxarm-l controller (192.168.1.238); None disables driving
     right_ip: str | None = None  # dxarm-r controller (192.168.1.231); None disables driving
     home: float | None = None  # home-bias cost weight for both arms (dataclass default 0.1)
+    beam: bool = False  # solve with IK-Beam (multi-seed staged LM) instead of a single solve
+    lm: list[int] = field(default_factory=lambda: [6, 10])  # beam: LM steps per stage
+    batch: list[int] = field(default_factory=lambda: [64, 4])  # beam: seeds entering each stage
+    seed_noise: float = 0.1  # beam: joint-space seed perturbation stddev (rad)
     tune: bool = False  # viser sliders that supersede the passed weights
     # Ruka self-collision: drop hand-internal pairs, check hand-vs-arm via one fitted
     # bounding sphere (~630 -> ~190 pairs). --no-coarse-hand-coll restores full fidelity.
     coarse_hand_coll: bool = True
+    hand_pub: int | None = None  # bind a ZMQ PUB here (5053) streaming ruka joints on ruka_{l,r}_joints
 
     def __post_init__(self) -> None:
         self.extr = Path(self.extr).expanduser().resolve() if self.extr else None
@@ -207,6 +254,7 @@ def main(cfg: RetargetConfig) -> None:
         right_ee=cfg.right_ee,
         coarse_hand_coll=cfg.coarse_hand_coll,
         home=cfg.home,
+        beam=BeamConfig(lm=list(cfg.lm), batch=list(cfg.batch), seed_noise=cfg.seed_noise) if cfg.beam else None,
     )
     ui = ViserWebUI(assets=unit_assets(units))
     if cfg.tune:
@@ -226,6 +274,13 @@ def main(cfg: RetargetConfig) -> None:
         image=frame[..., ::-1],
     )
 
+    hand_pub = RukaJointPublisher(cfg.hand_pub) if cfg.hand_pub is not None else None
+    hand_topics = ruka_pub_topics(units) if hand_pub is not None else {}
+    if hand_pub is not None and not hand_topics:
+        logging.warning("--hand-pub %s set but no ruka units; nothing will be published", cfg.hand_pub)
+    for name, (topic, _) in hand_topics.items():
+        logging.info("Publishing %s joints as %r on tcp://0.0.0.0:%s", name, topic, cfg.hand_pub)
+
     client = Client(cfg.host, cfg.port)
     worker = LatestWorker(lambda image: run_wilor(client, image), name="wilor-worker")
     policy = RetargetPolicy(units)
@@ -234,10 +289,15 @@ def main(cfg: RetargetConfig) -> None:
     for name, ip in (("dxarm-l", cfg.left_ip), ("dxarm-r", cfg.right_ip)):
         if ip is not None:
             drivers[name] = XArmDriver(XArmDriverConfig(ip=ip, gripper=False, clear=True))
-    # Deadman gates: pedal b streams live retarget targets, pedal c walks the arms toward
-    # HOME_DXARM, neither held clears the targets so the streams pause and the arms stay put.
-    gate = {"live": False, "home": False}
-    pedal = FootPedal(FootPedalConfig(deadman=True), hooks=[lambda s: gate.update(live=s["b"], home=s["c"])]) if drivers else None
+    # Deadman gates: pedal a streams ruka joints over zmq, pedal b streams live retarget
+    # targets, pedal c walks the arms toward HOME_DXARM, neither held clears the targets
+    # so the streams pause and the arms stay put.
+    gate = {"live": False, "home": False, "pub": False}
+    pedal = (
+        FootPedal(FootPedalConfig(deadman=True), hooks=[lambda s: gate.update(live=s["b"], home=s["c"], pub=s["a"])])
+        if drivers or hand_topics
+        else None
+    )
     # Warm up the solver JIT immediately so it compiles before hands appear (~1 min cold, seconds cached).
     warmup_kp3d = {}
     for slot, y in (("left", -0.3), ("right", 0.3)):
@@ -311,6 +371,9 @@ def main(cfg: RetargetConfig) -> None:
                     prev_cfgs = cfgs
                     policy_updates += 1
                     ui.step(cfgs)
+                    if hand_pub is not None and gate["pub"]:
+                        for name, (topic, idx) in hand_topics.items():
+                            hand_pub.pub(topic, cfgs[name][idx])
                     if gate["live"]:
                         for name, driver in drivers.items():
                             if driver.error is None:  # a streaming failure already logged itself
@@ -338,6 +401,8 @@ def main(cfg: RetargetConfig) -> None:
         policy_worker.close()
         for driver in drivers.values():
             driver.close()
+        if hand_pub is not None:
+            hand_pub.close()
         cap.release()
 
 

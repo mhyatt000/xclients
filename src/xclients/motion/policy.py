@@ -7,6 +7,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 from webpolicy.base_policy import BasePolicy
 
+from xclients.motion.beam import BeamConfig
 from xclients.motion.embodiment import dxarm_left, dxarm_right, Embodiment
 from xclients.motion.hand_planner import HandPlanner, RukaWeights
 from xclients.motion.planner import OnlinePlanner
@@ -54,14 +55,22 @@ class RetargetPolicy(BasePolicy):
             unit.planner.reset()
 
 
-def _make_unit(slot: str, emb: Embodiment, ee: EndEffector, weights: CostWeights, len_traj: int, dt: float) -> Unit:
+def _make_unit(
+    slot: str,
+    emb: Embodiment,
+    ee: EndEffector,
+    weights: CostWeights,
+    len_traj: int,
+    dt: float,
+    beam: BeamConfig | None,
+) -> Unit:
     if ee == "ruka":
         # Keypoint-space retargeting: 21-point local/global alignment with a
         # solved scale (HandPlanner), not SE3 link targets. Home bias follows
         # the shared CostWeights so one knob tunes both unit types.
         ruka_weights = RukaWeights(home=weights.home, home_hierarchy=weights.home_hierarchy)
-        return Unit((slot,), RukaRetargeter(emb), HandPlanner(emb, ruka_weights))
-    return Unit((slot,), GripperRetargeter(emb), OnlinePlanner(emb, weights, len_traj, dt))
+        return Unit((slot,), RukaRetargeter(emb), HandPlanner(emb, ruka_weights, beam=beam))
+    return Unit((slot,), GripperRetargeter(emb), OnlinePlanner(emb, weights, len_traj, dt, beam=beam))
 
 
 def default_units(
@@ -72,16 +81,18 @@ def default_units(
     right_ee: EndEffector = "gripper",
     coarse_hand_coll: bool = True,
     home: float | None = None,
+    beam: BeamConfig | None = None,
 ) -> dict[str, Unit]:
     """Bimanual default: left hand drives dxarm-l, right hand drives dxarm-r.
 
     home, when given, overrides the home-bias weight for both unit types.
+    beam, when given, solves with IK-Beam instead of a single warm-started LM.
     """
     if home is not None:
         weights = replace(weights, home=home)
     return {
-        "dxarm-l": _make_unit("left", dxarm_left(left_ee, coarse_hand_coll), left_ee, weights, len_traj, dt),
-        "dxarm-r": _make_unit("right", dxarm_right(right_ee, coarse_hand_coll), right_ee, weights, len_traj, dt),
+        "dxarm-l": _make_unit("left", dxarm_left(left_ee, coarse_hand_coll), left_ee, weights, len_traj, dt, beam),
+        "dxarm-r": _make_unit("right", dxarm_right(right_ee, coarse_hand_coll), right_ee, weights, len_traj, dt, beam),
     }
 
 
